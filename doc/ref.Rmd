@@ -1,0 +1,899 @@
+---
+title: "基于机器学习的上市公司财务指标与中长期股价研究"
+output:
+  word_document:
+    toc: yes
+    toc_depth: 2
+    fig_caption: yes
+    reference_docx: template.docx
+csl: chinese-gb7714-2005-numeric.csl
+bibliography: reference.bib
+---
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(fig.pos = 'H', echo = FALSE, warning = FALSE, message = FALSE, cache = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(caret)
+library(kernlab)
+library(pROC)
+library(knitr)
+library(scales)
+library(magrittr)
+library(doParallel)
+cl <- makePSOCKcluster(6)
+registerDoParallel(cl)
+dat = read.csv('../data/main/data_for_model.csv', header = TRUE)
+dat = dat %>% 
+  select(-isST)
+code_name = read.csv('../data/main/code_name.csv')
+dictionary = read.csv('dictionary.csv')
+# base_family = 'STXihei'
+
+dat %>% 
+  select(code, year1, diff, YOYPNI)
+```
+
+\newpage
+
+内容摘要
+
+本研究使用企业财务指标预测个股未来相对指数的年涨跌幅，建立多种机器学习模型进行涨跌二分类预测，使用深度学习进行涨跌幅预测并建立选股池，经回测验证年收益超过指数。
+
+通过将涨跌幅的预测转化为二分类问题，使用相同的重抽样方法进行重复 5 次的十折交叉验证，Logit、线性判别、偏最小二乘判别、支持向量机、梯度提升机 5 个模型中梯度提升机在验证集准确率和 Kappa 衡量指标下均表现最佳，偏最小二乘判别次之。滚动市盈率、滚动市现率、应收账款周转率、存货周转率、已获利息倍数、净利润同比增长率是最重要的变量。
+
+使用深度学习进行定量预测，利用 2009 年至 2018 年的数据进行神经网络的训练，运用异常值处理、正则化、dropout技术、提前终止技术、学习率优化、增减隐藏层等模型参数调节和优化手段，模型在测试集上预测值与实际值相关系数达到 0.17。将该模型应用在 2019 年进行回测，预测值与实际值相关系数为 0.13，证明模型有较好的预测未来涨跌幅的能力。
+
+将神经网络模型运用于 2020 年测试其实际效果，选择预测涨幅最大的 300 只股票组成等权重组合，选股池年涨幅超过上证 50 指数 7.9%；预测涨幅前 100 只股票实际年涨幅超过指数 9.1%，前 50 只股票年涨幅超过指数 11.1%，前 30 只股票年涨幅超过指数 14.2%，前 15 只股票年涨幅超过指数 16.2%。
+
+\
+
+**关键词**： 量化交易 \ \ \ 低频交易 \ \ \ 机器学习 \ \ \ 深度神经网络 \ \ \ 财务指标
+
+ABSTRACT
+
+Using corporate financial indicators to predict the future annual growth or decline of individual stocks relative to the market index, we established a variety of machine learning models to do categorical prediction, and also took advantage of deep learning to make the quantitative prediction. We established a stock selection pool, and the annual return exceed the market index, which was verified by backtesting.
+
+By transforming the prediction of fluctuations into a binary classification problem, using the same re-sampling method to repeat five times for ten-fold cross-validation, we established five models including logit regression, LDA, PLSDA, SVM, and GBM. Using accuracy rate and Kappa as measurement indicators, the GBM model performs best in the validation set among all the models, followed by the PLS model. PE, PCF, receivables-turnover-ratio, inventory-turnover-ratio, times-interest-earned ratio, and YOY-growth-rate-of-net-profit are the most important variables.
+
+Using data from 2009 to 2018 for deep learning to make a quantitative prediction, the correlation coefficient between the predicted value and the actual value in the test set reached 0.17 after performing outlier processing, regularization, dropout technology, early termination technology, learning rate optimization, hidden layers increment, and other model parameter adjustments and optimization methods. Applied to the backtest in 2019, the model correlation coefficient between the predicted value and the actual value was 0.13, which proves that the model has the ability to predict the future.
+
+The neural network model was also applied to the data set in 2020, and 300 stocks with the largest predicted increase in price are selected to form an equal-weight portfolio, in which the annual return exceeded the Shanghai 50 Index by 7.9%. The annual return of the top 100 stocks predictions exceeded the index by 9.1%, 11.1% for the top 50, 14.2% for the top 30, and 16.2% for the top 15. 
+
+**KEY WORDS**: quantitative trading \ \ \ low frequency trading \ \ \ machine learning \ \ \ deep neural network \ \ \ financial indicators
+
+\newpage
+
+\tableofcontents
+
+# 背景
+
+## 量化交易
+
+20世纪70年代，巴克莱国际投资管理公司发布第一只被动指数基金，量化交易的序幕就此拉开。@lzr2013
+
+与传统投资主要依靠深厚的金融、经济学知识，结合行业研究进行主观决策，非常看重指标的实际含义、构建逻辑、对股价的影响过程不同，量化投资使用统计学方法，依赖数学模型来找寻投资标的，利用大量的数据进行挖掘，一般注重于挖掘潜在的对未来股价有预测作用的因子，使用这些因子构建交易策略，且通常情况下交易程序化。这也使得量化投资不易受到认知偏差的影响，且很好地规避了交易者自身的情绪影响。
+
+量化策略主要分为两大类：CTA 策略和 Alpha 策略。 CTA 策略的周期较短，从分钟、小时到日线不等，少部分甚至会用到秒级数据，研究对象以期货居多，但也有对股票的 CTA 策略。主要研究方法是对期货历史上的成交量和价格数据进行技术分析，提炼出具有统计学意义的规律，并假设这类规律在未来仍然有效，进行仓位调整操作。CTA 策略由于对速度的要求较高，一般都是全自动交易。大多数的 CTA 策略本质上为 Beta 策略，以趋势追踪为主，反转策略为辅，一般会在胜率和盈亏比之间进行平衡。市场上的趋势策略较为趋同，然而反转策略则差异性较大。Alpha 策略的持仓周期普遍较长，从日到月不等，策略可能基于基本面或量价，许多机构会将这两种策略进行融合，或是按照其能力、方向对两者有所倾向。有些团队倾向于从基本面财务方面精细筛选财务因子，有些团队倾向于使用数据挖掘、统计方法提炼量价因子。Alpha 策略可能使用全对冲的方式来规避系统风险，也可以使用不对冲的方式赚取 $\beta$ 收益，且节约期货端的保证金，然而需要承担较大的回撤。
+
+## 量化交易与低频交易
+
+根据交易的频率，一般将交易划分为高频和低频。与高频交易在极端时间内进行很高频率的程序交易不同，中低频交易一般不需要使用超高速的复杂计算机系统下单，在进行量化交易时对时间精准度的要求不高，对低频交易甚至可以采用人工下单的方式。高频交易研发时需要大量计算机专家的工作，且硬件距离交易所非常接近，交易指令直接发送至交易所，对市场数据的响应延时在微秒级；而低频交易在计算机技术方面的要求则低得多，不需要花费高昂的交易外费用。高频交易的持仓时间非常短，下单委托和取消的频率非常高，持仓不过夜，收盘前保持平仓。低频交易持仓周期从日、月、季到年不等，更为看重股价的长期趋势，注重上市公司的财务状况，其交易费用较低，滑点基本可以忽略不计，更加注重对指标实际含义的研究、对本质规律的把握。高频交易普遍采用被动做市、套利等策略，主要通过技术分析、挖掘因子的方式进行策略搭建，对于交易费用和滑点十分敏感，更加注重因子挖掘、策略回测系统设计、交易系统搭建。而在低频交易中大多数以研究宏观经济和公司基本面的个人或机构投资者以价值投资的方式进行交易；同时，中低频交易中也存在一些技术分析的投机者。财务指标作为企业总结和评价财务状况和经营成果的相对指标，其更新频率较低，对中长期的股价预测作用较大，适合用于低频量化交易。
+
+## 量化交易与基本面研究
+
+基本面包括宏观经济的基本面和企业的基本面，价值投资者一般通过研究宏观经济运行的情况和企业的经营情况，借助经济指标和企业的财务指标等公开或内部数据，判断企业的价值相比其估值孰高孰低，在市值低估时分阶段买入，待高估时清仓或卖空。与价值投资者不同，技术分析投机者通常仅使用证券交易所公开的股价、交易量、交易额、五档委托、换手率等信息从历史交易中尝试提取一定的规律，在这些规律未来重现的可能性较大的前提下，通过这些规律在二级市场上获利。
+
+## 量化交易与机器学习
+
+许多研究者发现，股价的历史数据和其它信息蕴含着许多可以预测未来股价的信息。随着机器学习的兴起，各大科研机构、金融公司、股票投资者都尝试将机器学习应用在量化交易上。尽管机器学习在许多领域如语音识别、图像分类、NLP等方面取得了非常明显的效果，然而在金融市场上却很难达到同样的准确率。这主要是因为股票市场是一个非常复杂的价格决定系统，股票价格受到非常多因素的影响，包括宏观经济走势、行业前景、企业的经营状况和发展潜力、公开和内幕消息的披露、投资者心理、市场上各种量化机构的策略执行等等，而且这些因素之间有着错综复杂的联系。正是由于因素的复杂性和股票市场的相对有效性，在绝大多数时候，精确地预测未来股价是一件近乎不可能的任务。虽然无法精确地预测股价，但通过机器学习研究对交易胜率有帮助的策略同样具备现实意义。
+
+# 文献综述
+
+## 量化研究
+
+量化研究一般都是基于因子进行的研究，在 sharpe（1964）起初的资本资产定价模型中，将个股的期望收益率分解为无风险回报率和个股的回报率两部分，又将个股回报率定义为其 $\beta$ 值与市场所有股票的平均回报率的乘积，$\beta$ 值即衡量了个股相对大盘的波动性。@sharpe1964capital
+
+$$E_{\left(r_{D}\right)}=r_{f}+\beta_{D}\left[E_{\left(r_{M}\right)}-r_{f}\right]$$
+
+CAPM 模型的缺陷之处在于认为股票的收益与整个股票市场为线性关系，个股的收益必然跟随整个市场，个股之间的差异仅仅在于波动率。
+
+Ross（1976）的套利定价模型将因素模型与无套利条件相结合，认为股票的收益率由其预期与偏离程度之和构成，其中偏离程度由宏观经济因素偏离其期望值的差与其敏感程度的乘积加上随机扰动项构成，这个随机扰动项由公司的特定事件影响。同时他指出，只有噪声因子能通过多样化投资消除，而宏观因子的影响则不可能完全被消除。@cox1976valuation 
+
+$$r_{i}=E\left(r_{i}\right)+\beta_{i} F+e_{i}$$
+
+然而，ATP 模型的缺陷在于它并没有指出因子具体是什么，只是说风险溢价与各种因素相关。而 Banz（1981）寻找大多数股票的市场价值与其回报率之间的关系，发现股票收益与各种市场价值因子有关。@banz1981relationship 由于个股的收益率与其各种因子有关，于是各个研究者开始找寻能够表达个股价值的因子。
+
+一些学者发现，公司的某些自身特征也可以一定程度上解释股票收益率，Fama 和 French（1993）研究得出结论，企业的规模、账面市值、市场超额收益率这三个因素也对股票收益有着显著影响。@fama1993common 
+
+$$R_{i}-R_{f}=\beta_{1}\left(R_{m}-R_{f}\right)+\beta_{2} S M B+\beta_{3} HML$$
+
+Fama-French 三因子模型使用了统计学手段找出了三个具体的因子，因此寻找别人尚未发现的有效因子开始成为许多量化金融机构的目标。 在三因子模型的基础上，Fama 和 French 在 2013 年提出了五因子模型：
+
+$$R_{i}-R_{f}=\beta_{1}\left(R_{m}-R_{f}\right)+\beta_{2} S M B+\beta_{3} H M L+\beta_{4} R M W+\beta_{5} C M A$$
+
+相比三因子模型，五因子模型加入了两个新的因子：盈利能力因子和投资风格因子。@fama2015five 
+
+## 基于基本面因子的量化研究
+
+曾卓斐进行了基于基本面的 Alpha 策略的量化研究，摒弃了传统以收益率作为目标的训练方法，创新地以市净率为目标，且比较了不同学习器的拟合效果，构建了一套表现优秀的 Alpha 策略，美中不足的是以市净率为目标的方法在实际金融市场的可应用性稍微较弱。 @zzf2020 
+
+杨世林使用市净率、市盈率、市销率、市净率、ROA、ROE 6 个较为经典常用的财务指标，构建了一套多因子策略，回测显示策略的年化率达到 16.1%（基准年化率 8.5%）。 @ysl2018
+
+王晓翌使用在巴菲特的“烟蒂“价值投资理论基础上，使用 5 个财务指标，构建了一个多因子策略。与基准的沪深 300 指数相比，该策略的 Alpha 值达到 12%。 @wxy2021
+
+## 基于机器学习的量化交易
+
+国外学者 Fan 等使用支持向量机的分类方法选择出可能有超常表现的个股，得出一个等权重的组合，在五年期获得超过澳大利亚股票市场基准指数 71% 的回报率。 @fan2001stock
+
+Singh 等人展示了深度学习能够提升股票价格预测的准确性，并且实验得到深度神经网络的实际收益与预测收益之间的相关系数比径向基函数神经网络高 17.1％，比递归神经网络高 43.4％。@singh2017stock
+
+Takeuchi 将深度学习应用到趋势交易策略中，使用了堆叠约束玻耳兹曼机从个股历史价格中提取特征，得到一个增强的动量交易策略，取得了原始趋势基准的成绩。 @takeuchi2013applying
+
+# 研究意义与创新
+
+## 研究意义
+
+与有些研究以 PE、PB、估值等指标为预测目标不同，本研究直接使用个股涨跌幅作为预测目标，对量化交易从业者的借鉴意义大，可应用性强，以期对低频交易者、企业管理者、经济金融学者有所启示。
+
+在整体的策略设计中，我们保证了调仓的可实现性。我们选择五月份首个交易日作为调仓日，根据每一年该日至下一年该日的计算涨跌幅，此时按照规定所有 A 股企业年报均已披露。我们使用收盘价而非开盘价，避免由于开盘前的竞价交易导致实际交易价偏离开盘价过大的情况，有效减轻滑点现象；且使用后复权价格力求贴合实际投资收益率。
+
+在研究过程中，由于指标对收益率的拟合只能代表过去，在未来不一定有效，因此在训练模型时我们只使用数据发生的当时所能获取的信息，避免从未来推断过去的情况。在回测时我们严格按照通用的回测要求，只使用历史信息，严格屏蔽处于“未来状态”的信息，以保证模型结果可信且贴近现实。
+
+多数量化策略研究都以中高频交易为主，调仓周期较短，由于交易中易发生滑点现象，且需要缴纳手续费、印花税等等费用，在模型的实际表现往往与其理论值有很大的差距。而我们将中长期股价（年涨跌幅）作为研究对象，回测假定调仓周期为年，滑点和交易费用基本可以忽略不计。
+
+由于股价受影响的因素错综复杂，我们不追求个股预测的准确性，仅评价组合的效果。单纯使用财务指标得到股价的精确预测值既不合理也不现实，但我们可以根据财务指标对股价的预测值排序来构造股票组合。对于部分个股，其预测值很有可能要较大偏差，但只要组合的年涨跌幅在回测中大幅超越指数，模型即具备现实意义。
+
+## 研究创新
+
+与大多数量化研究都使用时间序列研究方法不同，因财务指标数据更新频率为年 ^[考虑到季报和半年报的局限性，我们仅使用年报作为财务指标的获取来源，见数据处理部分] ，我们抛弃了对单只股票或单一指数的时间序列处理方法，将所有股票的所有年份经过处理后视为同等的观测值，使用 (T - 1) 年的年报数据的财务数据（于 T 年披露）和 T 年调仓时的估值指标对 (T + 1) 年个股相对上证 50 指数涨跌幅进行拟合和预测。
+
+本研究使用机器学习方法，将公司的财务指标作为因子，本质为一个 Alpha 策略，由于预测对象为个股相对中证 50 指数的涨跌幅，在实际交易应用中可使用股票与股指期货的对冲策略，仅需要个股组合涨幅相比指数更高即可，无需关心市场收益率部分，因此在本研究中也无需将宏观指标加入模型。
+
+# 数据获取及处理
+
+## 来源及获取方式
+
+我们同时使用两种较为主流的股票数据 API：akshare ^[https://www.akshare.xyz] 和 baostock ^[http://baostock.com] 。我们在两个数据库中分别获取全市场的日频数据后，经校验，baostock 库的数据质量较 akshare 高，因此选择 baostock 作为我们最终使用的数据源。 ^[指
+标计算方式详见附录]
+
+```{r}
+N = length(unique(code_name$industry))
+industry_table = code_name %>% 
+  count(industry) %>%
+  filter(industry != '') %>% 
+  mutate(percent = percent(n / nrow(code_name))) %>%
+  arrange(desc(percent))
+```
+
+对于已经退市的股票，我们并没有将他们直接移除，避免发生逆向筛选现象。我们共获取了 4335 家上市公司的数据，涵盖了 29 个申万一级行业分类，其中机械设备、化工、医药生物和电子行业的占比最多。 ^[每个申万行业个股数量及占比见附录]
+
+## 数据处理
+
+A股所有上市企业每年发布四份本公司的财务报表，分别为年报、半年报、一季报和三季报。与年报不同，季报和半年报无需被审计，因此许多公司在编制一季报、半年报和三季报时严谨性较差；而年报的编制则详实，可信度较高，且有更加仔细频繁的校验和调整。
+
+季报和中报的可操纵空间较大，部分公司存在先发布业绩预报，利用季报和中报做数据调整，以此实现业绩超预期来进行股价炒作的现象。然而，对于年报，这种做法则较少，一方面是因为年报受到审计的限制，调整余地小，另一方面是伪造年报的法律风险较大。同时，季报和中报受到季节周期的影响较大，大部分企业的营收等指标在一年中不同季度的分布经常是不均匀的，且在不同行业间差异较大。
+
+因此，我们仅使用年报披露的财务数据作为研究对象。
+所有的企业都在每年的 1-4 月份披露前一年的年报，因此在每年的 5 月份的首个交易日所有企业上一年的年报均已披露。
+我们将每年 5 月的首个交易日作为调仓日，此日至下一年 5 月的首个交易日作为一个年周期，计算每年每只股票的年涨跌幅，同时我们计算上证 50 指数的涨跌幅，得出个股相比指数的涨跌幅。
+
+$$
+diff_T = \frac{price_T - price_{T-1}}{price_{T-1}} - \frac{index_T - index_{T-1}}{index_{T-1}}
+$$
+
+此处：
+
+* diff 为个股相对指数的年涨跌幅
+* price 为每年 5 月份首个交易日个股股价
+* index 为每年 5 月份首个交易日上证50指数
+* T 为年涨跌幅的计算年份
+* 使用 T-2 年的年报指标数据
+* 使用 T-1 年 5 月份首个交易日的估值指标数据
+* 使用涨跌幅后复权作为股价的计算方式
+* 保留退市的企业，以防逆向筛选
+* 由于样本量已经足够大，我们剔除所有包含缺失值的观测
+* 对于估值指标，为了消除季节因素，使用滚动（TTM）的方式进行计算，即计算最新四个季度
+
+我们使用后复权的方式，计算方法为：在除权除息日，复权因子和前一交易日不同，后复权价格为不复权价格乘以新的后复权因子；在股权登记日，复权因子和前一交易日相同，后复权价格为不复权价格乘以旧复权因子。同时我们使用涨跌幅复权算法作为股价的调整方式，假设投资者在除权日前一天卖出该股票的全部份额，然后在除权日用卖出所获得的全部资金买回该股票，即不参与分配。在这样的假设下，我们确保了初始投入的资金 100% 利用，不会因为分红导致投资减少或配股导致投资增加，这样的调整方式有利于更贴近实际情况地进行回测。
+
+由于股票市场存在行业轮动的现象，在不同的时期不同特定行业股票可能短暂地出现强势的现象，因此在中长期预测训练模型中，我们并不将行业信息加入模型中，仅观测选股池中个股的行业分布情况。
+
+```{r}
+dat = dat %>% 
+  mutate(diff = ifelse(diff < 0, 0, 1)) %>% 
+  filter(year1 < 2025) %>%
+  select(-code)
+dat_complete = dat[complete.cases(dat), ]
+
+
+#dat_complete = dat_complete %>% 
+#  select(diff, peTTM, pbMRQ, psTTM)
+# library(corrplot)
+# corrplot(cor(dat_complete))
+
+dat_complete$diff = as.factor(dat_complete$diff)
+summary(dat_complete$diff)
+```
+
+```{r}
+dictionary %>% 
+  select(指标类型, 指标, 指标名称) %>% 
+  kable(caption = '指标一览')
+```
+
+# 机器学习
+
+## 抽样方式与评价指标
+
+```{r cache=TRUE}
+set.seed(1)
+inTraining <- createDataPartition(dat_complete$diff, p = .01, list = FALSE)
+training <- dat_complete[inTraining, ]
+testing = dat_complete[-inTraining, ]
+
+# training <- dat_complete
+
+fitControl <- trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 10,
+                           ## repeated ten times
+                           repeats = 5)
+```
+
+我们将 T 年相对指数上涨和下跌作为因变量，将（T - 2）年的财务指标和（T - 1）年的估值指标作为因变量，使用10折交叉验证、重复5次的方法进行重抽样，使用 Kappa 和准确率作为模型的评价指标。
+
+$$\text{灵敏度} = \frac{\text{正确判定为“上涨”的样本数量}}{\text{实际为“上涨”的样本数量}}$$
+
+$$\text{特异度} = \frac{\text{正确判定为“下跌”的样本数量}}{\text{实际为“下跌”的样本数量}}$$
+
+$$\text{精准度} = \frac{\text{正确判定为“上涨”的样本数量}}{\text{判定为“上涨”的样本数量}}$$
+
+$$\text{假上涨率} = 1 - \text{特异度}$$
+
+Kappa 统计量（Cohen 1960） @Cohen1960A 最初用来评估两个评价者结果的一致性，它考虑到了由偶然情况引起的准确性误差。
+
+$$\mathrm{Kappa}=\frac{O-E}{1-E}$$
+
+其中：
+
+* 0 代表预测值与实际值不同，1 代表相同。
+* E 代表根据混淆矩阵边缘计数得出的期望准确性
+* Kappa 取值范围为：[-1, 1]
+* Kappa 值 0.30 到 0.50 之间代表合理的一致性（Agresti 2002） 
+
+## 模型训练
+
+### logit 回归
+
+```{r cache=TRUE}
+set.seed(1)
+logit <- train(diff ~ ., data = training, 
+                 method = "glm", 
+                 trControl = fitControl)
+table = logit$results
+rownames(table) = NULL
+kable(table, caption = "在重抽样下 Logit 模型的表现", digits = 3)
+```
+
+因为 logit 模型相对简单，求解速度快，且具有较强的可解释性，因此我们首先使用 logit 模型对样本进行拟合。 ^[模型详细见附录]
+
+### 线性判别分析（LDA）
+
+Fisher（1936）@fisher36lda 和 Welch（1939）@WELCH1939 最优判别准则。由贝叶斯法则：
+
+$$
+\operatorname{Pr}\left[Y=C_{\ell} | X\right]=\frac{\operatorname{Pr}\left[Y=C_{\ell}\right] \operatorname{Pr}\left[X | Y=C_{\ell}\right]}{\sum_{\ell=1}^{C} \operatorname{Pr}\left[Y=C_{\ell}\right] \operatorname{Pr}\left[X | Y=C_{\ell}\right]}
+$$
+
+对于二分类问题，如果：
+
+$$
+\operatorname{Pr}\left[Y=C_{1}\right] \operatorname{Pr}\left[X | Y=C_{1}\right]>\operatorname{Pr}\left[Y=C_{2}\right] \operatorname{Pr}\left[X | Y=C_{2}\right]
+$$
+
+我们就将 X 分入类别1，否则分入类别2。
+
+为了计算 $\operatorname{Pr}\left[X | Y=C_{\ell}\right]$，我们假设预测变量服从多元正态分布，分布的两个参数为：多维均值向量 $\boldsymbol{\mu}_{\ell}$ 和协方差矩阵 $\boldsymbol{\Sigma}_{\ell}$，假设不同组的均值向量不同且协方差相同，用每一类观测样本均值 $\bar{x}_{\ell}$ 估计 $\boldsymbol{\mu}_{\ell}$，用样本协方差 $\boldsymbol{S}$ 估计理论协方差矩阵 $\boldsymbol{\Sigma}$，将样本观测 $\mu$ 代入 $X$，第 $\ell$ 组的线性判别函数为：
+
+$$
+X^{\prime} \boldsymbol{\Sigma}^{-1} \boldsymbol{\mu}_{\ell}-0.5 \boldsymbol{\mu}_{\ell}^{\prime} \boldsymbol{\Sigma}^{-1} \boldsymbol{\mu}_{\ell}+\log \left(\operatorname{Pr}\left[Y=C_{\ell}\right]\right)
+$$
+
+由于我们的分类只有两类，所以只有一个判别向量，不需要优化判别向量的数目，即不需要模型调优，计算速度较快。
+
+从线性判别函数的构造上看，Fisher 的线性判别方法有两点缺陷：
+
+1. 由于线性判别分析的结果取决于协方差矩阵的逆，且只有当这个矩阵可逆时才存在唯一解。这意味着样本量要大于变量个数 ^[一般要求数据集含有至少预测变量5—10倍的样本]，且变量必须尽量相互独立。而在我们的数据集中，变量之间有很强的多重共线性，这在一定程度上会降低预测的准确性。
+
+1. 而且，由于线性判别分析的数学构造，随着预测变量数目的增加，预测的类别概率越来越接近0和1。这意味这，在我们的数据集下，由于变量较多，如前文所述的调整概率阈值的方法可能有效性会降低。这在单纯分类上涨和下跌的股票时可能并不是问题，但在需要进一步平衡灵敏度和特异度以达到更好效果时将很难进行。
+
+
+```{r cache=TRUE}
+set.seed(1)
+lda <- train(diff ~ ., data = training, 
+                 method = "lda", 
+                 trControl = fitControl,
+               preProc = c("center", "scale"))
+# table = lda$results
+# rownames(table) = NULL
+# kable(table, caption = "在重抽样下 LDA 模型的表现", digits = 3)
+```
+
+```{r fig.align="center", fig.cap="在重抽样下 LDA 模型的准确率分布", out.width="50%"}
+trellis.par.set(caretTheme())
+densityplot(lda, pch = "|")
+```
+
+
+### 偏最小二乘判别分析（PLSDA）
+
+由于 LDA 不太适合多重共线性的情况，我们使用偏最小二乘压缩变量空间的维度，然而常规的 PLS 方法在寻找样本分类的变量组合方面存在缺陷，且由于没有涉及被解释变量的分类信息（无监督），很难通过 PLS 找到一个最优化分类预测。
+
+因此，我们使用偏最小二乘判别分析进行二分类。Berntsson 和 Wold（1986）将偏最小二乘应用在了二分类问题中，起名为偏最小二乘判别分析。@Peder1986Comparison Liu 和 Rayens（2007）研究认为在降维非必须且建模目的为分类时，LDA 一定优于 PLSDA，然而若多重共线性较强，PLSDA 的表现可能超过 LDA。 @Liu2007PLS
+
+```{r cache=TRUE}
+set.seed(1)
+plsda <- train(diff ~ ., data = training, 
+                 method = "pls", 
+                 trControl = fitControl,
+               tuneGrid = expand.grid(.ncomp = 1:10))
+# table = plsda$results
+# rownames(table) = NULL
+# kable(table, caption = "在重抽样下 PLSDA 模型的表现", digits = 3)
+```
+
+```{r fig.align="center", fig.cap="准确率随主成分个数的变化", out.width="49%", fig.show='hold'}
+trellis.par.set(caretTheme())
+# plot(plsda, metric = "Kappa")
+plot(plsda)
+```
+
+我们使用前十个 PLS 成分参与线性判别，随主成分个数增加，准确率和 Kappa 指标的变化趋势基本一致，选择前 5 个主成分进行判别效果最佳。
+
+```{r fig.align="center", fig.width=4, fig.height=2, fig.cap="变量重要程度", out.width="80%"}
+plsImp = varImp(plsda, scale = FALSE)
+table = data.frame(variables = rownames(plsImp$importance), importence = plsImp$importance$Overall)
+table = table %>% 
+  arrange(desc(importence)) %>% 
+  top_n(8)
+ggplot(table, aes(x = reorder(variables, importence), y = importence)) +
+  geom_col() +
+  theme_minimal() +
+  coord_flip() +
+  labs(x = "variables")
+```
+
+根据偏最小二乘的结果，滚动市盈率、滚动市现率、应收账款周转率、存货周转率、已获利息倍数、净利润同比增长率是最重要的变量。
+
+### 支持向量机（SVM）
+
+Logit、LDA、PLSDA 本质上均为线性模型（模型结构产生线性类边界），优点是不太会受到无信息变量的干扰。但在数据不存在大量无信息变量的情况下，使用非线性模型效果可能更佳。
+
+```{r cache=TRUE}
+set.seed(1)
+svm <- train(diff ~ ., data = training, 
+                 method = "svmRadial", 
+                 trControl = fitControl,
+            tuneLength = 7)
+# kable(svm$results, caption = "在重抽样下 SVM 模型的表现", digits = 3)
+```
+
+```{r fig.align="center", fig.cap="调优参数不同取值下的准确率变化", out.width="49%", fig.show='hold'}
+trellis.par.set(caretTheme())
+# plot(svm)
+plot(svm, metric = "Kappa")
+```
+
+准确率指标和 Kappa 指标变化趋势相同，随损失参数的增大而先上升后下降，选择适中损失参数时效果最佳。
+
+### 随机梯度助推法（GBM）
+
+第三类被广泛应用的模型是分类树与基于规则的模型，在此，我们使用助推法，它是一种树结构与规则的融合方法。Friedman等（2000） @Ben2000Tissue 发现分类问题可以视为是正向分布可加模型，因此通过最小化指数损失函数可以实现分类。
+
+设定样本预测初始值为对数发生：
+
+$$
+g_{i}^{(0)}=\log \frac{\hat{p}}{1-\hat{p}}
+$$
+
+其中，$g(x)$ 是模型的预测值，$\hat{p}_{i}=\frac{1}{1+\exp [-g(x)]}$
+
+接着从 $j = 1$ 开始进行迭代：
+
+1. 梯度计算： $z_{i}=y_{i}-\hat{p}_{i}$
+2. 训练集随机抽样：
+3. 基于子样本训练树模型（将之前得到的残差作为结果变量）
+4. 计算最终 Pearson 残差的估计 $r_{i}=\frac{1 / n\sum_{i}^{n}\left(y_{i}-\hat{p}_{i}\right)}{1 / n \sum_{i}^{n} \hat{p}_{i}\left(1-\hat{p}_{i}\right)}$
+5. 更新模型 $g_{1}=g_{i}+\lambda g_{i}^{(j)}$
+
+```{r cache=TRUE, include=FALSE}
+set.seed(1)
+library(gbm)
+gbm <- train(diff ~ ., data = training, 
+                 method = "gbm", 
+                 trControl = fitControl)
+gbmImp <- varImp(gbm, scale = FALSE)
+# kable(gbm$results, caption = "在重抽样下 GBM 模型的表现", digits = 3)
+```
+
+```{r fig.align="center", fig.cap="调优参数和迭代次数不同取值下的准确率指标变化", out.width="49%", fig.show='hold'}
+# trellis.par.set(caretTheme())
+# plot(gbm)
+
+trellis.par.set(caretTheme())
+plot(gbm, metric = "Kappa")
+```
+
+树深度过深、迭代次数过多会导致过拟合，从而使得准确度和 Kappa 指标下降。
+
+```{r fig.align="center", fig.cap="在重抽样下 GBM 模型的准确率分布", out.width="50%"}
+trellis.par.set(caretTheme())
+densityplot(gbm, pch = "|")
+```
+
+## 模型间的比较
+
+由于对于每个模型我们设置了同样的随机数种子，所有模型使用的重抽样样本完全一致 ^[重抽样 50 次：10 折交叉验证重复 5 次]，对 5 个模型表现的比较具有较强的科学性。^[具体模型比较数据见附录] 
+
+```{r}
+resamp = resamples(list(LDA = lda, PLSDA = plsda, SVM = svm, GBM = gbm, Logit = logit))
+s1 = summary(resamp)
+s2 = summary(diff(resamp))
+```
+
+```{r fig.align="center", fig.cap="模型间 Kappa 的比较（0.95 置信区间）", out.width="80%", fig.height=3, fig.width=6}
+ggplot(resamp,
+       models = c("LDA", "PLSDA", "SVM", "GBM", "Logit"),
+       metric = "Kappa",
+       conf.level = 0.95) +
+  theme_bw()
+```
+
+```{r fig.align="center", fig.cap="模型间准确率的比较（0.95 置信区间）", out.width="80%", fig.height=3, fig.width=6}
+ggplot(resamp,
+       models = c("LDA", "PLSDA", "SVM", "GBM", "Logit"),
+       metric = "Accuracy",
+       conf.level = 0.95) +
+  theme_bw()
+```
+
+对于此特定的数据集，准确率和 Kappa 指标两者作为衡量指标基本一致。对于模型的比较，梯度提升树算法效果最佳，偏最小二乘和支持向量机次之，线性判别和逻辑回归这类较为简单的算法效果较差，且逻辑回归预测的方差最大。
+
+## 模型预测效果
+
+```{r, include=FALSE}
+set.seed(1)
+#dat_complete = dat_complete %>% 
+#  select(diff, peTTM, pbMRQ, psTTM)
+inTraining <- createDataPartition(dat_complete$diff, p = .75, list = FALSE)
+training <- dat_complete[inTraining, ]
+testing = dat_complete[-inTraining, ]
+
+training = dat_complete %>% 
+  filter(year1 < 2020) %>% 
+  select(-year1)
+
+testing = dat_complete %>% 
+  filter(year1 == 2020) %>% 
+  select(-year1)
+
+logit2 = glm(diff ~ ., data = training, family = binomial(link = "logit"))
+logit2_sum = summary(logit2)
+translate = as.character(dictionary$指标名称)
+translate = c('（截距）', translate)
+length(translate)
+#rownames(logit2_sum$coefficients) = translate
+
+gbm2 <- train(diff ~ ., data = training, 
+                 method = "gbm")
+library(gbm)
+gbmImp <- varImp(gbm2)
+gbmImp
+```
+
+
+
+```{r fig.align="center", fig.cap="预测的上涨概率值（红色代表实际上涨）", out.width="80%"}
+probability = predict(gbm2, newdata = testing, type = "prob")
+probability = probability[, 2]
+distribution = data.frame(probability = probability, actual = testing$diff)
+distribution = distribution %>% 
+  mutate(actual = ifelse(actual == 1, 'up', 'down'))
+ggplot(distribution, aes(x = probability, fill = actual)) +
+  geom_density(alpha = 0.3) + 
+  theme_minimal() +
+  scale_fill_manual(values = c("#037418", "darkred"))
+
+testPred = probability
+testPred[testPred > 0.5] = 1
+testPred[testPred <= 0.5] = 0
+testPred = as.factor(testPred)
+```
+
+从结果看，GBM 模型的预测有一定效果，真实值为上涨的平均预测上涨概率值更大，且二分类的预测值都呈现出正态分布。
+
+```{r}
+confusion = confusionMatrix(data = testing$diff,
+                reference = testPred,
+                positive = "1")
+```
+
+```{r}
+table = as.data.frame(confusion$overall)
+names(table) = c("指标值")
+table = t(table)
+rownames(table) = NULL
+kable(table, caption = "结果验证表", digit = 3)
+```
+
+```{r}
+table = as.data.frame(confusion$byClass[1:5])
+names(table) = c("指标值")
+table = t(table)
+kable(table, caption = "灵敏度和特异度等指标表", digit = 3)
+```
+
+预测的准确率为 `r percent(confusion$overall[1], 0.1)`，`r percent(confusion$byClass[1], 0.1)`的将会上涨股票被模型成功捕捉到；对于模型预测将会上涨的股票，只有 `r percent(1 - confusion$byClass[2], 0.1)`的误判率；对于模型预测将会上涨的股票， `r percent(confusion$byClass[3], 0.1)`发生了上涨。 ^[混淆矩阵见附录]
+
+出于股票池组合、交易手续费及印花税成本、资金规模的考虑，我们往往会限制持仓股票数量，可以采用调节预测概率阈值的方式选取合适数量的股票。此时灵敏度和特异度会发生变化，阈值上升时，精准度上升，但特异度会有所下降。因此我们使用接受者操作特征（ROC）曲线(Altman 和 Bland 1994; Brown 和 Davis 2006; Fawcett 2006) @Altman1994Diagnostic @Brown2006Receiver @Fawcett2006An 来决定分类概率的阈值，在精准度和特异度二者间权衡。
+
+```{r fig.align="center", fig.cap="Logit 模型的 ROC 曲线", out.width="80%"}
+rocCurve = roc(response = testing$diff,
+               predictor = probability,
+               levels = rev(levels(testing$diff)),
+               plot = TRUE,
+               print.thres=TRUE, print.auc=TRUE)
+```
+
+
+在实际操作中，我们可以通过**确定不同的阈值来达到不同的效果**，例如：
+
+1. 当挑选较少的股票组成多头组合时，通过确定较高的阈值以提高精准度，尽量减少错判。
+2. 当卖空或配合其它策略规避可能下跌的股票时，通过降低阈值的方式提高特异度，以检测出更多潜在的可能带来亏损的股票。
+3. 在资金量足够的情况下，设定适中的阈值以谋求利益最大化。
+
+
+# 深度学习
+
+## 数据集划分
+
+```{r}
+table = read.csv('dataset_describe.csv')
+kable(table, caption = '数据集划分年份')
+```
+
+我们将整个数据集划分为 6 个集，其中训练集、验证集和测试集使用 2009 - 2018 年 ^[此处年份指涨跌幅年份，分别为财务报表年份的（T+2）年，估值指标的（T+1）年] 的数据随机划分，训练集占比 80%，验证集占比 10%，测试集占比 10%，目的主要为使三个集合的标签分布基本保持一致，以获得效果较好的模型。
+
+我们使用训练集中的数据进行训练，在训练的过程中，通过将迭代得到的参数应用在验证集上进行预测，得出验证集上的损失指标，以此损失指标作为训练过程中的反馈以调整模型参数。由于测试集是训练过程中从未直接或间接接触的数据，待模型参数调整完毕后，使用测试集来评价模型的最终效果。
+
+回测集使用 2019 年的涨跌幅数据，作用在于评判依靠“过去”的数据建立的模型在“未来”的数据集上的拟合效果，与测试集不同，回测集中的数据已经超出了训练集所能接触到的年份，因此可以评价模型是否拥有足够强的泛化能力。
+
+效应集用来评价模型解决股票涨跌预测的实际能力，使用 2020 年的涨跌幅数据，我们对模型预测出的涨跌幅与实际值进行比较，以得到在真实的交易情况下模型的效果。
+
+预测集使用 2019 年年报（于 2020 年披露）, 2020 年估值指标，对 2020 年 5 月份至 2021 年 5 月份的涨跌幅进行预测。 ^[截至论文交稿日期，2021 年 5 月份交易情况未知]
+
+## 深度神经网络的训练
+
+### 神经网络的构建
+
+构建一个三层的深度神经网络：
+
+* 输入层：输入维度为传入变量的个数，输出维度为 64，激活函数为：*RELU*
+* 中间层：输出维度为 64，激活函数为：*RELU*
+* 输出层：输出维度为 1 
+
+优化器使用 rmsprop @Geoffrey ，对于每个权重，它保持了梯度平方的移动平均：
+
+$$
+\text { MeanSquare }(w, t)= \rho \text { MeanSquare }(w, t-1)+0.1\left(\partial E / \partial w^{(t)}\right)^{2}
+$$
+
+其中，系数 $\rho$ 设定为 0.9。
+
+为了消除各个财务指标变量的量纲，且使得模型收敛的速度更快，我们对各个变量进行了标准化。
+
+```{r, out.width='100%',fig.cap='随迭代次数增加损失的变化'}
+include_graphics('outcome/train1/随迭代次数增加损失的变化.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的残差分布'}
+include_graphics('outcome/train1/DNN在测试集和回测集上的残差分布.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的表现'}
+include_graphics('outcome/train1/DNN在测试集和回测集上的表现.pdf')
+```
+
+模型迭代1000次，验证集的均方误差变化非常剧烈，从拟合效果上看，测试集预测值和实际值有一定的正相关关系，然而回测集则显示在通过过去的数据预测未来时预测表现不佳。
+
+考虑到金融数据中同一指标极端值可能较多，我们尝试对异常值进行一定的处理，使之落在正常的范围内。
+
+### 异常值处理
+
+经数据探查，在许多财务和估值指标上存在许多偏离正常的值，如当市值较大，盈利与亏损较为持平时，市盈率的绝对值会变得异常大。我们对这些异常的值进行处理：
+
+对于每个变量，我们记录 0.25 分位数的值，并将小于该值的数值设定为该值，对于 0.75 分位数以上的数值进行同样的处理。
+
+```{r, out.width='100%',fig.cap='随迭代次数增加损失的变化'}
+include_graphics('outcome/train2/随迭代次数增加损失的变化.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的残差分布'}
+include_graphics('outcome/train2/DNN在测试集和回测集上的残差分布.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的表现'}
+include_graphics('outcome/train2/DNN在测试集和回测集上的表现.pdf')
+```
+
+在进行异常值的处理之后，训练集和验证集的损失曲线变得平滑，然而随着训练迭代次数的增加，训练集损失的下降并没有带来验证集损失的下降，显然模型发生了过拟合现象。且从拟合效果上看，测试集拟合效果不佳，且回测集显示模型基本没有预测未来的能力。
+
+### 正则化处理
+
+为了减轻过拟合现象，且保持每个财务指标或估值指标都生效，我们选择不将指标的权重被压缩至 0，使用 L2 正则化。
+
+```{r, out.width='100%',fig.cap='随迭代次数增加损失的变化'}
+include_graphics('outcome/train3/随迭代次数增加损失的变化.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的残差分布'}
+include_graphics('outcome/train3/DNN在测试集和回测集上的残差分布.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的表现'}
+include_graphics('outcome/train3/DNN在测试集和回测集上的表现.pdf')
+```
+
+加入正则化后模型的效果明显好转，从测试集上看预测值与真实值已经有明显正相关关系，然而回测集显示预测未来能力仍然很差。从训练损失曲线上看，曲线不够平滑，误差的波动非常剧烈，模型仍然存在一定过拟合现象。
+
+### dropout 处理
+
+为了减轻过拟合，我们使用 dropout 方法来增强神经元的协同适应能力。我们对网络的输入层指定了 20% dropout 概率值，即每个神经元有 20% 的概率被随机剔除。在隐藏层上，我们将 dropout 的概率值提升至 50%。由于输出层是我们所必须的结果，不使用 dropout 方法。
+
+```{r}
+神经网络层 = c('输入层', 'drop out (20%)', '中间层', 'drop out (50%)', '输出层')
+神经元个数 = c(64, 0, 64, 0, 1)
+参数个数 = c(2944, 0, 4160, 0, 65)
+table = data.frame(神经网络层, 神经元个数, 参数个数)
+kable(table, caption = '搭建的神经网络结构（总参数个数：7169）')
+```
+
+```{r, out.width='100%',fig.cap='随迭代次数增加损失的变化'}
+include_graphics('outcome/train4/随迭代次数增加损失的变化.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的残差分布'}
+include_graphics('outcome/train4/DNN在测试集和回测集上的残差分布.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的表现'}
+include_graphics('outcome/train4/DNN在测试集和回测集上的表现.pdf')
+```
+
+在 dropout 处理之后，损失曲线变得平滑，随着迭代次数的增加，训练集和验证集损失下降后保持平稳，残差大致服从以0为均值的正态分布。除了有一部分预测值几乎为同一常数外，模型在测试集上的表现较好，然而在回测集上表现仍然不佳。
+
+### 学习率优化和提前终止
+
+由于损失函数仅仅在前几十代急剧下降，后基本保持平稳，我们让学习率随着迭代次数递减：
+
+```{r, out.width='30%', fig.cap='学习率随迭代次数变化曲线'}
+include_graphics('outcome/train5/学习率随迭代次数变化曲线.pdf')
+```
+
+$$
+\text{learn_rate} = \frac{\text{initial}}{1 + \frac{\text{decay_rate} \times \text{step}}{\text{decay_step}}}
+$$
+
+其中：
+
+* decay_rate 为衰减进行的频率：经过多次尝试调参，我们将衰减率定为 $e^{-2}$
+* initial 为初始学习率：经过多次尝试调参，我们将初始学习率定为 $e^{-5}$
+
+且我们设置了 early stop 用于防止过拟合，在多次迭代验证集损失未出现明显下降的情况下，提前终止训练。
+
+
+```{r, out.width='100%',fig.cap='随迭代次数增加损失的变化'}
+include_graphics('outcome/train5/随迭代次数增加损失的变化.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的残差分布'}
+include_graphics('outcome/train5/DNN在测试集和回测集上的残差分布.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的表现'}
+include_graphics('outcome/train5/DNN在测试集和回测集上的表现.pdf')
+```
+
+在 50 次迭代后，验证集的损失基本上已经下降到较低的程度，测试集表现较好，回测集欠佳。
+
+### 增加隐藏层
+
+为了增加神经网络的深度，我们加入了一个隐藏层，同样也在此隐藏层上运用 dropout 技术，在模型训练过程中使用 early stop。
+
+```{r}
+神经网络层 = c('输入层', 'drop out (20%)', '中间层1', 'drop out (50%)', '中间层2', 'drop out (50%)', '输出层')
+神经元个数 = c(64, 0, 64, 0, 64, 0, 1)
+参数个数 = c(2944, 0, 4160, 0, 4160, 0, 65)
+table = data.frame(神经网络层, 神经元个数, 参数个数)
+kable(table, caption = '搭建的神经网络结构（总参数个数：11329）')
+```
+
+```{r, out.width='100%',fig.cap='随迭代次数增加损失的变化'}
+include_graphics('outcome/train6/随迭代次数增加损失的变化.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的残差分布'}
+include_graphics('outcome/train6/DNN在测试集和回测集上的残差分布.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的表现'}
+include_graphics('outcome/train6/DNN在测试集和回测集上的表现.pdf')
+```
+
+### 最终模型
+
+经过多次调参，增加隐藏层后的模型因容量过大，在增加迭代次数的情况下极易过拟合。因此，我们最终采用单隐藏层的模型，继续延长了训练时间，由于我们已经使用正则化和 dropout 技术一定程度上防止过拟合的发生，训练经过了 1000 次迭代也没有发生验证集损失函数上升的现象。
+
+```{r, out.width='100%',fig.cap='随迭代次数增加损失的变化'}
+include_graphics('outcome/train/随迭代次数增加损失的变化.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的残差分布'}
+include_graphics('outcome/train/DNN在测试集和回测集上的残差分布.pdf')
+```
+
+```{r, out.width='100%',fig.cap='DNN在测试集和回测集上的表现'}
+include_graphics('outcome/train/DNN在测试集和回测集上的表现.pdf')
+```
+
+测试集预测值和真实值成明显的正相关关系，相关系数 0.171，回测集相关系数达到 0.128，证明模型有较好的预测未来涨跌幅的能力。
+
+## 模型效果
+
+我们将由 2019 年以前的数据训练得到的模型应用到 2020 年的效应集，评估股票涨跌预测的实际能力，对预测涨跌幅和实际涨跌幅进行对比，得出模型在真实交易下的效果。^[预测结果与实际涨跌幅对比详见附录]
+
+```{r}
+effect_predictions = read.csv('outcome/effect_predictions.csv')
+effect_predictions = effect_predictions %>%
+  left_join(code_name, by = 'code') %>%
+  mutate(actual = actual * 100) %>%
+  arrange(desc(prediction))
+effect_table = effect_predictions %>% 
+  arrange(desc(prediction)) %>% 
+  mutate(rk = 1:nrow(effect_predictions)) %>%
+  select(code, code_name, industry, rk, actual)
+effect_table2 = effect_predictions %>% 
+  arrange(prediction) %>% 
+  mutate(rk = 1:nrow(effect_predictions)) %>%
+  select(code, code_name, industry, rk, actual)
+names(effect_table) = c('证券代码', '证券名称', '一级行业分类', '预测相对指数年涨跌幅排名', '实际相对指数涨跌幅(%)')
+names(effect_table2) = c('证券代码', '证券名称', '一级行业分类', '预测相对指数年涨跌幅排名', '实际相对指数涨跌幅(%)')
+```
+
+```{r}
+industry = NULL
+actual = NULL
+topN = c(15, 30, 50, 100, 300)
+for(i in topN)
+{
+  actual = c(actual, mean(head(effect_predictions, i)$actual))
+  industry = c(industry, n_distinct(head(effect_predictions, i)$industry))
+}
+table = data.frame(topN, industry, actual)
+names(table) = c('预测值排名前N股票组合', '涵盖一级行业分类数量', '实际相对指数组合平均年涨跌幅(%)')
+kable(table, digits = 1, caption = '选股池相对指数年涨跌幅')
+```
+
+我们选取预测涨幅最大的头部股票组成选股池，假设在所有股票上我们使用相同的资金量进行投资，计算它们的相对指数的涨跌幅实际值，得到了远超上证 50 指数的收益。若选取预测涨幅最大的 30 只股票按照相同的权重组成一个组合，年涨跌幅超过指数 14.2%，选取头部 15 只股票，年涨幅超过指数 16.2%，总体效果较好。^[由于以年为调仓周期的低频交易印花税、手续费等交易费用较低，基本可忽略]
+
+## 预测未来
+
+使用经过测试的模型，我们得出 A 股市场 2021 年预测涨跌幅排名前 10 的股票名单。^[该论文撰写于 2021 年 3 月份，对未来预测的准确率请读者自行验证]
+
+```{r}
+predict_predictions = read.csv('outcome/predict_predictions.csv')
+predict_predictions = predict_predictions %>%
+  left_join(code_name, by = 'code') %>%
+  arrange(desc(prediction)) %>%
+  select(code, code_name, industry, prediction)
+  # select(code, code_name, industry, prediction) %>%
+  # mutate(prediction = prediction * 100)
+table = predict_predictions %>%
+  mutate(rk = 1:nrow(predict_predictions)) %>%
+  select(-prediction)
+table2 = predict_predictions %>% 
+  arrange(prediction) %>%
+  mutate(rk = 1:nrow(predict_predictions)) %>%
+  select(-prediction)
+# names(table) = c('证券代码', '证券名称', '一级行业分类', '预测相对指数年涨跌幅(%)')
+# names(table2) = c('证券代码', '证券名称', '一级行业分类', '预测相对指数年涨跌幅(%)')
+names(table) = c('证券代码', '证券名称', '一级行业分类', '预测2021年涨幅排名')
+names(table2) = c('证券代码', '证券名称', '一级行业分类', '预测2021年跌幅排名')
+kable(head(table, 10), digits = 1, caption = '预测2021年涨幅排名前 10 股票名单')
+kable(head(table2, 10), digits = 1, caption = '预测2021年跌幅排名前 10 股票名单')
+```
+
+# 总结
+
+在我们的研究中，我们假设金融市场并不完全有效，认为历史的规律对未来具有指导作用，通过研究历史的数据与股价涨跌幅之间的关系，对个股相对指数的年涨跌幅进行预测。我们使用公司的年报财务指标作为因子，由于数据更新频率低，我们抛弃传统的时间序列处理方法，将 2007 年至 2020 年间 A 股所有股票的所有年份经过处理后视为同等的观测，使用 (T - 1) 年的年报数据的财务数据（于 T 年披露）和 T 年调仓时的估值指标对 (T + 1) 年个股相对上证 50 指数涨跌幅进行拟合和预测，得到的主要结论有：
+
+1. 在验证集上 5 种机器学习模型对股票的涨跌（二分类）预测准确率排序为：GBM、PLSDA、SVM、logit、LDA。
+1. 我们将 GBM 模型用于测试集，准确率达到 61.7%，鉴于影响股票价格的因素错综复杂，模型效果已经具备较强的可应用性。
+1. 在指标选择上，最重要的估值指标为市盈率和市销率，最重要的财务指标为应收账款周转率、存货周转率、已获利息倍数、净利润同比增长率。
+1. 使用深度学习进行定量预测，使用 2009 - 2018 年数据进行训练，在测试集上预测值与实际值相关系数达到 0.17；2019 年回测结果显示预测值与实际值相关系数为 0.13，证明模型有较好的预测未来涨跌幅的能力。
+1. 使用深度学习模型预测的 2020 年涨幅最大的 300 只股票组成等权重组合，年涨幅超过上证 50 指数 7.9%；前 100 只股票年涨幅超过指数 9.1%，前 50 只股票年涨幅超过指数 11.1%，前 30 只股票年涨幅超过指数 14.2%，前 15 只股票年涨幅超过指数 16.2%。
+
+\newpage
+
+# 参考文献{-}
+
+\
+
+<div id="refs"></div>
+
+\newpage
+
+# 附录{-}
+
+## 数据概览
+
+```{r}
+dictionary %>% 
+  select(指标名称, 指标计算方式) %>% 
+  kable(caption = '指标的计算方式')
+```
+
+```{r}
+# table = str(dat)
+# kable(table)
+
+# table = as.data.frame(summary(dat))
+# table = t(table)
+# kable(table)
+```
+
+```{r}
+names(industry_table) = c('行业', '股票数量', '占比')
+kable(industry_table, caption = "申万行业个股数量及占比")
+```
+
+## 深度学习预测效果
+
+```{r}
+kable(head(effect_table, 10), digits = 1, caption = '预测涨幅最大的10只股票与其实际涨跌幅对比')
+kable(head(effect_table2, 10), digits = 1, caption = '预测跌幅最大的10只股票与其实际涨跌幅对比')
+```
+
+## 机器学习模型
+
+### 模型间的比较
+
+```{r}
+kable(s1$statistics$Accuracy, caption = "模型间准确率的比较", digit = 3)
+```
+
+```{r}
+kable(s2$table$Accuracy, caption = "模型间准确率差异矩阵", digit = 3)
+```
+
+```{r}
+kable(s1$statistics$Kappa, caption = "模型间 Kappa 的比较", digit = 3)
+```
+
+```{r}
+kable(s2$table$Accuracy, caption = "模型间Kappa差异矩阵", digit = 3)
+```
+
+### GBM 模型测试集效果
+
+```{r}
+kable(as.data.frame(confusion$table), caption = "GBM 模型测试集混淆矩阵表")
+```
+
+### 逻辑回归结果
+
+```{r}
+kable(logit2_sum$coefficients, caption = "Logit回归系数表", digit = 2)
+```
+

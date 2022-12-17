@@ -1,0 +1,223 @@
+---
+title: "硕士论文"
+output:
+  word_document:
+    toc: yes
+    toc_depth: 2
+    fig_caption: yes
+    reference_docx: template.docx
+csl: chinese-gb7714-2005-numeric.csl
+bibliography: reference.bib
+---
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(fig.pos = 'H', echo = FALSE, warning = FALSE, message = FALSE, cache = TRUE)
+library(rmarkdown)
+library(knitr)
+library(tidyverse)
+library(scales)
+library(magrittr)
+dat = read.csv('../data/data_for_model.csv', header = TRUE)
+code_name = read.csv('../data/code_name.csv')
+dictionary = read.csv('dictionary.csv')
+percent_round = function(x){
+  scales::percent(x, accuracy = 1L)
+}
+# base_family = 'STXihei'
+```
+
+\newpage
+
+# 内容摘要{-}
+
+\
+
+**关键词**： 量化交易 \ \ \ 低频交易 \ \ \ 机器学习 \ \ \ 深度神经网络 \ \ \ 财务指标
+
+# ABSTRACT{-}
+
+**KEY WORDS**: quantitative trading \ \ \ low frequency trading \ \ \ machine learning \ \ \ deep neural network \ \ \ financial indicators
+
+\newpage
+
+\tableofcontents
+
+\newpage
+
+# 背景
+
+# 文献综述
+
+# 研究意义与创新
+
+## 研究意义
+
+
+在整体的策略设计中，我们保证了调仓的可实现性。我们选择五月份首个交易日作为调仓日，根据每一年该日至下一年该日的计算涨跌幅，此时按照规定所有 A 股企业年报均已披露。我们使用收盘价而非开盘价，避免由于开盘前的竞价交易导致实际交易价偏离开盘价过大的情况，有效减轻滑点现象；且使用后复权价格力求贴合实际投资收益率。
+
+在研究过程中，由于指标对收益率的拟合只能代表过去，在未来不一定有效，因此在训练模型时我们只使用数据发生的当时所能获取的信息，避免从未来推断过去的情况。在回测时我们严格按照通用的回测要求，只使用历史信息，严格屏蔽处于“未来状态”的信息，以保证模型结果可信且贴近现实。
+
+多数量化策略研究都以中高频交易为主，调仓周期较短，由于交易中易发生滑点现象，且需要缴纳手续费、印花税等等费用，在模型的实际表现往往与其理论值有很大的差距。而我们将中长期股价（年涨跌幅）作为研究对象，回测假定调仓周期为年，滑点和交易费用基本可以忽略不计。
+
+由于股价受影响的因素错综复杂，我们不追求个股预测的准确性，仅评价组合的效果。单纯使用财务指标得到股价的精确预测值既不合理也不现实，但我们可以根据财务指标对股价的预测值排序来构造股票组合。对于部分个股，其预测值很有可能要较大偏差，但只要组合的年涨跌幅在回测中大幅超越指数，模型即具备现实意义。
+
+## 研究创新
+
+与大多数量化研究都使用时间序列研究方法不同，因财务指标数据更新频率为年 ^[考虑到季报和半年报的局限性，我们仅使用年报作为财务指标的获取来源，见数据处理部分] ，我们抛弃了对单只股票或单一指数的时间序列处理方法，将所有股票的所有年份经过处理后视为同等的观测值，使用 (T - 1) 年的年报数据的财务数据（于 T 年披露）和 T 年调仓时的估值指标对 (T + 1) 年个股相对上证 50 指数涨跌幅进行拟合和预测。
+
+仅需要个股组合涨幅相比指数更高即可，无需关心市场收益率部分，因此在本研究中也无需将宏观指标加入模型。
+
+# 数据来源和处理方式 
+
+使用两种主流的股票数据库 akshare ^[https://www.akshare.xyz] 和 baostock ^[http://baostock.com] 获取 A 股所有股票 2007-2022 年的估值指标数据、已发布的财报财务指标数据，经校验比较两者的数据质量后，baostock 数据库质量较 akshare 更好，因此选择 baostock 数据库获取的数据进行分析和建模。 ^[指标计算方式详见附录]
+
+
+```{r}
+N = length(unique(code_name$industry))
+industry_table = code_name %>% 
+  count(industry) %>%
+  filter(industry != '') %>% 
+  mutate(percent = percent(n / nrow(code_name))) %>%
+  arrange(desc(percent))
+```
+
+数据获取共 XX GB，
+
+
+对于已经退市的股票，我们并没有将他们直接移除，避免发生逆向筛选现象。
+
+由于剔除已退市企业会造成“来自未来信息的泄漏”，为避免该逆向筛选的发生，我们仍然将已知退市的股票的历史信息纳入了我们后续的分析和模型中。
+
+我们共获取了 xxx 家上市公司的数据，涵盖了 xx 个申万一级行业分类，其中机械设备、化工、医药生物和电子行业的占比最多。 ^[每个申万行业个股数量及占比见附录]
+
+# 实证 - 知乎文章
+
+第一层次是简单回归，包括双变量、多元回归，基本计量问题（共线性、异方差、自相关）的处理；第二层次更专业点儿，包括模型设定误差检验与模型修正、特殊数据类型（时间序列、虚拟变量、面板数据等）的模型选择和处理、联立方程、VEC模型、VAR模型、条件异方差模型等；第三层次包括有序因变量、面板VAR、神经网络、分位数模型、季节调整模型等等。
+
+## 描述性统计
+
+## 差异性分析
+
+## 相关性分析
+
+
+# 预处理
+
+TODO：不同处理方式对结果的影响比较
+
+## 缺失值处理
+
+经检查，由于种种原因，部分公司的部分财务指标常有缺失的情况，且各公司缺失的指标互不相同。
+
+对于因变量（主营业务及净利润）缺失的样本，我们将其进行删除；对于自变量财务指标部分缺失的样本，由于直接删除存在缺失值的样本将导致可用样本量明显减少，数据的样本较为珍贵，我们使用插补的方法对缺失值进行处理。
+
+[公式]
+
+## 异常值处理
+
+对于财务指标，许多比率型指标由于计算方式的原因容易产生极端值。例如，市盈率的计算方式市值与净利润之比，在净利润处于盈亏平衡线附近时，市盈率绝对值接近0，将导致市盈率极端大或极端小。
+
+## 标准化
+
+标准化能消除不同财务指标方差大小的影响。鉴于财务指标的特殊性，我们不使用常规的标准化方法，而是对每个指标使用该样本数据在同指标中的分位距代替其原值。
+
+## 特征变换
+
+特征变换改变了变量的分布使得变换后数据呈现一个合适的正态分布，可以有效解决模型的异方差性问题。
+
+对于自变量，我们使用 yeo-johnson 和 quantile 方法进行特征变换，对于 quantile 变换方法，由于它并不是线性的，会改变原有变量间的线性相关性。
+
+对于因变量，由于我们进行二分类预测，因此不进行特征变换。
+
+<此处需要补充>
+
+## 分类变量处理
+
+我们使用独热编码的方式处理非数值型变量，在我们的数据中，我们将‘申万一级行业分类’处理为哑变量。
+
+对于企业名称这一变量，由于企业数量上千，如果进行独热编码处理将导致变量个数过多，这样处理后数据集的高维稀疏性质将导致许多机器学习模型的速度和准确率受到很大影响。因此我们使用聚类方法先对企业名称进行聚类，之后使用聚类标签代替特征的原始值。
+
+## 数据倾斜
+
+对于营业收入，上涨和下跌的样本分别为 XX% ，预测目标变量体现出较强的不平衡性，因此我们使用 SMOTE 过采样技术进行数据倾斜的修正。
+
+[过采样方法](https://imbalanced-learn.org/stable/index.html)
+
+<过采样可以做的东西有很多>
+
+# 特征工程
+
+TODO：不同处理方式对结果的影响比较
+
+## 特征交互
+
+暂时不用
+
+## 特征选择
+
+
+## 二分类预测
+
+我们首先进行二分类预测，使用财务指标预测主营业务收入的涨跌。
+
+模型比较
+
+```{r}
+table = read.csv('output/classification/comparison.csv')
+kable(table, digits = 2)
+```
+
+模型调参
+
+
+最优模型
+
+我们使用十折交叉验证的方式进行多个机器学习模型的比较。
+
+```{r, out.width='25%', fig.align='center', fig.cap = "auc"}
+knitr::include_graphics("figure/classification/AUC.png")
+```
+
+```{r, out.width='25%', fig.align='center', fig.cap = "分类指标"}
+knitr::include_graphics("figure/classification/Class Report.png")
+```
+
+集成算法
+
+
+我们呈现出各行业预测主营业务收入上升的公司组合的平均实际营业收入增长率，与该行业所有公司平均营业收入增长率进行比较。
+
+```{r}
+table = read.csv('output/classification/portfolio.csv')
+table = mutate_if(table, is.numeric, percent_round)
+kable(table)
+```
+
+## 定量预测
+
+模型比较
+
+```{r}
+table = read.csv('output/classification/comparison.csv')
+kable(table, digits = 2)
+```
+
+我们呈现出各行业预测成长性较好和较差的 TOP X 公司组合的平均实际营业收入增长率，同时与该行业所有公司平均营业收入增长率进行比较。
+
+```{r}
+table = read.csv('output/regression/portfolio.csv')
+table = mutate_if(table, is.numeric, percent_round)
+kable(table)
+```
+
+
+# 参考文献{-}
+
+\
+
+<div id="refs"></div>
+
+\newpage
+
+# 附录{-}
+
