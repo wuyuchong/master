@@ -7,38 +7,40 @@ import pandas as pd
 from pycaret.regression import *
 
 dat = pd.read_csv('data/data_for_model.csv', dtype = {'code': str})
-
 processed = dat.drop(['diffEquity', 'diffAsset', 'diffNI', 'diffPNI'], axis=1)
 processed = processed.loc[~ np.isnan(dat['diffRevenue']), ]
-
 processed.loc[processed['diffRevenue'] > 2, 'diffRevenue'] = 2
-
 train = processed.query('fin_year < 2019')
 test = processed.query('fin_year == 2019')
 new = processed.query('fin_year == 2020')
-
 
 clf1 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True,
              numeric_features=['fin_year'], numeric_imputation='mean',
              high_cardinality_features=['code'], high_cardinality_method='clustering',
              normalize=True, normalize_method='robust',
              transformation=True, transformation_method='yeo-johnson')
+
 #  best = compare_models(cross_validation=False)
-#  pull().to_csv('doc/output/comparison.csv')
+#  pull().to_csv('doc/output/regression/comparison.csv')
+#  best = create_model(best, cross_validation=False, return_train_score=True)
+#  best = create_model(best, return_train_score=True)
+#  pull().to_csv('doc/output/regression/train_score.csv')
 
-xgboost = create_model('xgboost', cross_validation=False)
-#  plot_model(xgboost, plot='manifold', save='doc/figure/')
-#  interpret_model(xgboost, plot='pdp', save='doc/figure/')
-for plot_type in ['residuals', 'error', 'cooks', 'vc', 'manifold', 'feature', 'parameter']:
-    plot_model(xgboost, plot=plot_type, scale=5, save='doc/figure/regression/')
-    print('finish ' + plot_type)
 
-for plot_type in ['summary', 'correlation', 'reason', 'pdp', 'msa', 'pfi']:
-    interpret_model(xgboost, plot=plot_type, save='doc/figure/regression/')
-    print('finish ' + plot_type)
-#  deep_check(xgboost)
+#  best = tune_model(best)
+#  best = finalize_model(best)
 
-pred_unseen = predict_model(xgboost, data=new)
+#  plot_model(best, plot='manifold', save='doc/figure/')
+#  interpret_model(best, plot='pdp', save='doc/figure/')
+#  for plot_type in ['residuals', 'error', 'cooks', 'vc', 'manifold', 'feature', 'parameter']:
+    #  plot_model(best, plot=plot_type, scale=5, save='doc/figure/regression/')
+    #  print('finish ' + plot_type)
+#  for plot_type in ['summary', 'correlation', 'reason', 'pdp', 'msa']: # pfi
+    #  interpret_model(best, plot=plot_type, save='doc/figure/regression/')
+    #  print('finish ' + plot_type)
+#  deep_check(best)
+
+pred_unseen = predict_model(best, data=new)
 pull().to_csv('doc/output/regression/pred_unseen.csv')
 pred_unseen.to_csv('doc/output/regression/prediction.csv')
 
@@ -46,7 +48,7 @@ pred_unseen.to_csv('doc/output/regression/prediction.csv')
 
 
 
-prediction = pd.read_csv('doc/output/prediction.csv')
+prediction = pd.read_csv('doc/output/regression/prediction.csv')
 
 total = prediction[['industry', 'diffRevenue']].groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'ALL'})
 
@@ -79,5 +81,5 @@ merged = top2
 for i in [top5, top10, top20, total, bot20, bot10, bot5, bot2]:
     merged = pd.merge(merged, i, on='industry', how='left')
 
-merged.to_csv('doc/output/portfolio.csv')
+merged.to_csv('doc/output/regression/portfolio.csv')
 

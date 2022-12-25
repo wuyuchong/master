@@ -1,5 +1,5 @@
 ---
-title: "硕士论文"
+title: "基于数据挖掘算法的企业财务指标对未来成长性的预测研究"
 output:
   word_document:
     toc: yes
@@ -49,6 +49,8 @@ percent_round = function(x){
 # 文献综述
 
 # 研究意义与创新
+
+学习到财务指标与企业未来成长性的潜在关系
 
 ## 研究意义
 
@@ -100,7 +102,6 @@ industry_table = code_name %>%
 
 ## 相关性分析
 
-
 # 预处理
 
 TODO：不同处理方式对结果的影响比较
@@ -110,6 +111,8 @@ TODO：不同处理方式对结果的影响比较
 经检查，由于种种原因，部分公司的部分财务指标常有缺失的情况，且各公司缺失的指标互不相同。
 
 对于因变量（主营业务及净利润）缺失的样本，我们将其进行删除；对于自变量财务指标部分缺失的样本，由于直接删除存在缺失值的样本将导致可用样本量明显减少，数据的样本较为珍贵，我们使用插补的方法对缺失值进行处理。
+
+使用平均数 可选中位数
 
 [公式]
 
@@ -156,11 +159,16 @@ TODO：不同处理方式对结果的影响比较
 ## 特征选择
 
 
-## 二分类预测
+# 二分类预测
 
 我们首先进行二分类预测，使用财务指标预测主营业务收入的涨跌。
 
 模型比较
+
+我们使用十折交叉验证的方式进行多个机器学习模型的比较。
+^[阿里云服务器 Xeon 8 核 CPU 32G 内存]
+
+<对几个评价指标的解释待补充>
 
 ```{r}
 table = read.csv('output/classification/comparison.csv')
@@ -172,28 +180,125 @@ kable(table, digits = 2)
 
 最优模型
 
-我们使用十折交叉验证的方式进行多个机器学习模型的比较。
-
-```{r, out.width='25%', fig.align='center', fig.cap = "auc"}
+```{r, out.width='25%', fig.align='center', fig.cap = "KS 曲线"}
 knitr::include_graphics("figure/classification/AUC.png")
+```
+
+```{r, out.width='25%', fig.align='center', fig.cap = "模型在测试集上的 ROC 曲线"}
+knitr::include_graphics("figure/classification/AUC.png")
+```
+
+```{r, out.width='25%', fig.align='center', fig.cap = "精确率和召回率曲线"}
+knitr::include_graphics("figure/classification/Precision Recall.png")
+```
+
+```{r, out.width='25%', fig.align='center', fig.cap = "二分类辨别阈值图"}
+knitr::include_graphics("figure/classification/Threshold.png")
+```
+
+```{r, out.width='25%', fig.align='center', fig.cap = "混淆矩阵"}
+knitr::include_graphics("figure/classification/Confusion Matrix.png")
 ```
 
 ```{r, out.width='25%', fig.align='center', fig.cap = "分类指标"}
 knitr::include_graphics("figure/classification/Class Report.png")
 ```
 
+```{r, out.width='25%', fig.align='center', fig.cap = "决策边界"}
+knitr::include_graphics("figure/classification/Class Report.png")
+```
+
+<应该只有线性模型有用>
+
+
+```{r, out.width='25%', fig.align='center', fig.cap = "变量重要性"}
+knitr::include_graphics("figure/classification/Feature Importance.png")
+```
+
+> 特征工程过程涉及选择生成有效模型所需的最小特征，因为模型包含的特征越多，它就越复杂（数据越稀疏），因此模型对方差的误差越敏感。消除特征的常用方法是描述它们对模型的相对重要性，然后消除弱特征或特征组合并重新评估以确定模型在交叉验证期间是否更好。
+
+
+```{r, out.width='25%', fig.align='center', fig.cap = "变量重要性"}
+knitr::include_graphics("figure/classification/MSA msa.png")
+```
+
+< moris 变量重要性的理论待补充>
+
+```{r, out.width='25%', fig.align='center', fig.cap = "递归特征消除效果图"}
+# knitr::include_graphics("figure/classification/rfe.png")
+```
+
+> 递归特征消除（RFE）是一种特征选择方法，它训练模型并删除最弱的特征（或多个特征），直到达到指定数量的特征。特征按模型的coef_或feature_importances_属性排序，并通过递归消除每个循环的少量特征，RFE尝试消除模型中可能存在的依赖性和共线性。RFE需要保留指定数量的特征，但事先通常不知道有多少特征有效。为了找到最佳数量的特征，交叉验证与RFE一起用于对不同的特征子集进行评分，并选择最佳评分特征集合。RFECV可视化绘制模型中的特征数量以及它们的交叉验证测试分数和可变性，并可视化所选数量的特征。该图显示了理想的RFECV曲线，当捕获三个信息特征时，曲线跳跃到极好的准确度，然后随着非信息特征被添加到模型中，精度逐渐降低。阴影区域表示交叉验证的可变性，一个标准偏差高于和低于曲线绘制的平均精度得分。在这个例子中，我们可以看到选择了19个特征，尽管在大约5个特征之后模型的f1分数似乎没有太大改善。选择要消除的特征在确定每个递归的结果中起着重要作用；修改步骤参数以在每个步骤中消除多个特征可能有助于尽早消除最差特征，增强其余特征（并且还可用于加速具有大量特征的数据集的特征消除）。
+
+
+
+```{r, out.width='25%', fig.align='center', fig.cap = "二分类辨别阈值图"}
+knitr::include_graphics("figure/classification/Threshold.png")
+```
+
+
+```{r, out.width='25%', fig.align='center', fig.cap = "验证曲线"}
+knitr::include_graphics("figure/classification/Validation Curve.png")
+```
+
+> 模型验证用于确定模型对其已经过训练的数据的有效性以及它对新输入的泛化程度。为了测量模型的性能，我们首先将数据集拆分为训练和测试，将模型拟合到训练数据上并在保留的测试数据上进行评分。为了最大化分数，必须选择模型的超参数，以便最好地允许模型在指定的特征空间中操作。大多数模型都有多个超参数，选择这些参数组合的最佳方法是使用网格搜索。然而，绘制单个超参数对训练和测试数据的影响有时是有用的，以确定模型是否对某些超参数值不适合或过度拟合。
+
+## 模型校准
+
+```{r, out.width='25%', fig.align='center', fig.cap = "校准图"}
+knitr::include_graphics("figure/classification/Calibration Curve.png")
+```
+
+为避免 。。。。分别使用 XX 和 XX 对模型输出的概率进行校准，
+
+## 集成模型
+
+ensemble 相关理论
+
+Bagging:减少 variance
+boosting: 减少 bias
+stacking:增强预测效果
+
+使用 Bagging（bootstrap aggregation）算法对数据集进行等概率采样后，创建 10 个相同类别的模型（Estimators）进行拟合，在预测时通过 10 个模型结果投票得出最终结果，这种方法可以显著减小模型结果的方差。
+
+
+使用模型比较排名前三的 CatBoost、Light Gradiant Boosting、Extreme Gradient Boosting 模型分别进行 Boosting 和 Bagging 集成算法的搭建，发现在 Bagging 集成算法下三种模型都有一定的提升。
+
+```{r}
+table = read.csv('output/classification/comparison.csv')
+kable(table, digits = 2)
+```
+
+
+# 定量
+
+
+```{r, out.width='25%', fig.align='center', fig.cap = "在测试集上的拟合残差图"}
+knitr::include_graphics("figure/classification/Residuals.png")
+```
+
+> 残差是目标变量（y）的观测值与预测值（ŷ）之间的差异
+
+
+对模型的解释
+
+shap
+
 集成算法
 
+我们将测试集的数据也加入模型中进行训练，将训练后的模型应用于效应集上，观察模型的实际应用效果。
 
 我们呈现出各行业预测主营业务收入上升的公司组合的平均实际营业收入增长率，与该行业所有公司平均营业收入增长率进行比较。
 
 ```{r}
 table = read.csv('output/classification/portfolio.csv')
 table = mutate_if(table, is.numeric, percent_round)
-kable(table)
+kable(table, caption = '各行业预测TOP公司组合与同行业所有公司营业收入比较')
 ```
 
-## 定量预测
+结果表明，在每个申万一级行业下，基本都呈现出
+
+# 定量预测
 
 模型比较
 

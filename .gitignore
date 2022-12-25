@@ -1,2 +1,6 @@
 .ipynb_checkpoints
 .DS_Store
+doc/figure/
+doc/output/
+doc/main.docx
+doc/.Rhistory

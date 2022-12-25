@@ -64,13 +64,6 @@ pred_unseen = predict_model(skorch_model)
 pull().to_csv('doc/output/pred_unseen.csv')
 pred_unseen.to_csv('doc/output/prediction.csv')
 
-skorch_model = create_model(nn_pipe, cross_validation=False)
-pred_unseen = predict_model(skorch_model, data=test)
-pull().to_csv('doc/output/pred_unseen.csv')
-pred_unseen.to_csv('doc/output/prediction.csv')
-
-sys.exit()
-
 compare_models(sort='AUC', include=['lr', 'rf', 'lightgbm', skorch_model], cross_validation=False)
 pull().to_csv('doc/output/comparison.csv')
 
