@@ -10,35 +10,47 @@ import matplotlib
 matplotlib.rcParams['font.family'] = ['SimHei']
 
 
-# -----------------------------------------------------> preprocess
+# -----------------------------------------------------> init
 dat = pd.read_csv('data/data_for_model.csv', dtype = {'code': str})
 dat.loc[dat['diffRevenue'] > 2, 'diffRevenue'] = 2
-#  processed = dat.drop(['diffEquity', 'diffAsset', 'diffNI', 'diffPNI'], axis=1)
-processed = dat.drop(['diffEquity', 'diffAsset', 'diffNI', 'diffRevenue'], axis=1)
-#  processed = processed.loc[~ np.isnan(dat['diffRevenue']), ]
-processed = processed.loc[~ np.isnan(dat['diffPNI']), ]
-#  processed = processed.assign(diffRevenue = ['up' if a > 0 else 'down' for a in processed['diffRevenue']])
-processed = processed.assign(diffPNI = ['up' if a > 0 else 'down' for a in processed['diffPNI']])
+processed = dat.drop(['diffEquity', 'diffAsset', 'diffNI', 'diffPNI'], axis=1)
+processed = processed.loc[~ np.isnan(dat['diffRevenue']), ]
+processed = processed.assign(diffRevenue = ['up' if a > 0 else 'down' for a in processed['diffRevenue']])
 train = processed.query('fin_year < 2019')
 test = processed.query('fin_year == 2019')
 new = processed.query('fin_year == 2020')
-#  clf1 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True, session_id=1,
+
+
+# -----------------------------------------------------> preprocess
+#  clf0 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True, session_id=1,
+             #  numeric_features=['fin_year'], numeric_imputation='mean',
+             #  ignore_features=['code', 'industry'])
+#  compare_models(cross_validation=False, include=['lr', 'ridge', 'knn', 'svm'])
+#  compare_models(cross_validation=False, include=['catboost', 'lightgbm', 'xgboost', 'rf'])
+#  before = pull().sort_index()
+#  clf0 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True, session_id=1,
              #  numeric_features=['fin_year'], numeric_imputation='mean',
              #  high_cardinality_features=['code'], high_cardinality_method='clustering',
-             #  normalize=True, normalize_method='robust',
-             #  transformation=True, transformation_method='yeo-johnson',
-             #  fix_imbalance=True)
-clf1 = setup(data=train, test_data=test, target='diffPNI', html=False, silent=True, session_id=1,
-             numeric_features=['fin_year'], numeric_imputation='mean',
+             #  ignore_features=['industry'])
+#  compare_models(cross_validation=False, include=['lr', 'ridge', 'knn', 'svm'])
+#  compare_models(cross_validation=False, include=['catboost', 'lightgbm', 'xgboost', 'rf'])
+#  after = pull().sort_index()
+#  result = pd.concat([before, after]).reset_index()
+#  model_type = pd.DataFrame({'type': ['Origin'] * 4 + ['imputation'] * 4})
+#  result = pd.concat([model_type, result], axis=1)
+#  result.to_csv('doc/output/classification/preprocess.csv')
+
+
+
+# -----------------------------------------------------> train
+clf1 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True, session_id=1,
+             numeric_features=['fin_year'], imputation_type='simple',
              high_cardinality_features=['code'], high_cardinality_method='clustering',
              normalize=True, normalize_method='robust',
              transformation=True, transformation_method='yeo-johnson',
              fix_imbalance=True)
-
-# -----------------------------------------------------> train
-best = compare_models(sort='AUC', cross_validation=False)
+#  best = compare_models(sort='AUC', cross_validation=False)
 #  pull().to_csv('doc/output/classification/comparison.csv')
-pull().to_csv('doc/output/classification/PNI/comparison.csv')
 #  best = create_model('catboost', cross_validation=False, return_train_score=True)
 #  best = create_model(best, return_train_score=True)
 #  pull().to_csv('doc/output/classification/train_score.csv')
@@ -54,9 +66,9 @@ pull().to_csv('doc/output/classification/PNI/comparison.csv')
     #  print('finish ' + plot_type)
 
 
-#  catboost = create_model('catboost', cross_validation=False)
-#  lightgbm = create_model('lightgbm', cross_validation=False)
-#  xgboost = create_model('xgboost', cross_validation=False)
+catboost = create_model('catboost', cross_validation=False)
+lightgbm = create_model('lightgbm', cross_validation=False)
+xgboost = create_model('xgboost', cross_validation=False)
 
 
 # -----------------------------------------------------> ensemble
@@ -77,16 +89,25 @@ pull().to_csv('doc/output/classification/PNI/comparison.csv')
 #  best = create_model(best, cross_validation=False, return_train_score=True)
 
 
-# -----------------------------------------------------> blend
-#  blender = blend_models([catboost, lightgbm, xgboost])
-#  stacker = stack_models([catboost, lightgbm, xgboost])
+# -----------------------------------------------------> blend & stack
+blender = blend_models([catboost, lightgbm, xgboost])
+stacker = stack_models([catboost, lightgbm, xgboost])
+stacker2 = stack_models([catboost, lightgbm, xgboost], restack='False')
+best = compare_models(include=[catboost, lightgbm, xgboost, blender, stacker],
+                      cross_validation=False)
+result = pull()
+result.to_csv('doc/output/classification/result.csv')
+result = pd.read_csv('doc/output/classification/result.csv', index_col=0)
+model_type = pd.DataFrame({'type': ['Origin'] * 3 + ['Blending'] + ['Stacking']})
+model_type.join(result.sort_index()).to_csv('doc/output/classification/stack.csv', index=False)
 
-#  save_model(rf, 'model/my_model')
-#  rf = load_model('model/my_model')
+
+# -----------------------------------------------------> tune
+#  best = tune_model(best, early_stopping='asha')
+# 参数调整具体参见手册
 
 
 # -----------------------------------------------------> calibration
-#  best = tune_model(best)
 #  plot_model(best, plot='calibration', save='doc/figure/classification/before')
 #  best = calibrate_model(best)
 #  plot_model(best, plot='calibration', save='doc/figure/classification')

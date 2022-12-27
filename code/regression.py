@@ -7,14 +7,14 @@ import pandas as pd
 from pycaret.regression import *
 
 dat = pd.read_csv('data/data_for_model.csv', dtype = {'code': str})
-processed = dat.drop(['diffEquity', 'diffAsset', 'diffNI', 'diffPNI'], axis=1)
-processed = processed.loc[~ np.isnan(dat['diffRevenue']), ]
-processed.loc[processed['diffRevenue'] > 2, 'diffRevenue'] = 2
+dat.loc[dat['diffPNI'] > 2, 'diffPNI'] = 2
+processed = dat.drop(['diffEquity', 'diffAsset', 'diffNI', 'diffRevenue'], axis=1)
+processed = processed.loc[~ np.isnan(dat['diffPNI']), ]
 train = processed.query('fin_year < 2019')
 test = processed.query('fin_year == 2019')
 new = processed.query('fin_year == 2020')
 
-clf1 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True,
+clf1 = setup(data=train, test_data=test, target='diffPNI', html=False, silent=True,
              numeric_features=['fin_year'], numeric_imputation='mean',
              high_cardinality_features=['code'], high_cardinality_method='clustering',
              normalize=True, normalize_method='robust',
@@ -50,31 +50,31 @@ pred_unseen.to_csv('doc/output/regression/prediction.csv')
 
 prediction = pd.read_csv('doc/output/regression/prediction.csv')
 
-total = prediction[['industry', 'diffRevenue']].groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'ALL'})
+total = prediction[['industry', 'diffPNI']].groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': 'ALL'})
 
-top2 = prediction[['industry', 'diffRevenue', 'Label']].sort_values('Label', ascending = False) \
-    .groupby('industry').head(2).groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'TOP2'})
+top2 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = False) \
+    .groupby('industry').head(2).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': 'TOP2'})
 
-bot2 = prediction[['industry', 'diffRevenue', 'Label']].sort_values('Label', ascending = True) \
-    .groupby('industry').head(2).groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'BOT2'})
+bot2 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = True) \
+    .groupby('industry').head(2).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': 'BOT2'})
 
-top5 = prediction[['industry', 'diffRevenue', 'Label']].sort_values('Label', ascending = False) \
-    .groupby('industry').head(5).groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'TOP5'})
+top5 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = False) \
+    .groupby('industry').head(5).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': 'TOP5'})
 
-bot5 = prediction[['industry', 'diffRevenue', 'Label']].sort_values('Label', ascending = True) \
-    .groupby('industry').head(5).groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'BOT5'})
+bot5 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = True) \
+    .groupby('industry').head(5).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': 'BOT5'})
 
-top10 = prediction[['industry', 'diffRevenue', 'Label']].sort_values('Label', ascending = False) \
-    .groupby('industry').head(10).groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'TOP10'})
+top10 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = False) \
+    .groupby('industry').head(10).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': 'TOP10'})
 
-bot10 = prediction[['industry', 'diffRevenue', 'Label']].sort_values('Label', ascending = True) \
-    .groupby('industry').head(10).groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'BOT10'})
+bot10 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = True) \
+    .groupby('industry').head(10).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': 'BOT10'})
 
-top20 = prediction[['industry', 'diffRevenue', 'Label']].sort_values('Label', ascending = False) \
-    .groupby('industry').head(20).groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'TOP20'})
+top20 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = False) \
+    .groupby('industry').head(20).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': 'TOP20'})
 
-bot20 = prediction[['industry', 'diffRevenue', 'Label']].sort_values('Label', ascending = True) \
-    .groupby('industry').head(20).groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'BOT20'})
+bot20 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = True) \
+    .groupby('industry').head(20).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': 'BOT20'})
 
 merged = top2
 
