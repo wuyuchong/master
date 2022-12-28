@@ -22,38 +22,22 @@ new = processed.query('fin_year == 2020')
 
 
 # -----------------------------------------------------> preprocess
-#  clf0 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True, session_id=1,
-             #  numeric_features=['fin_year'], numeric_imputation='mean',
-             #  ignore_features=['code', 'industry'])
-#  compare_models(cross_validation=False, include=['lr', 'ridge', 'knn', 'svm'])
-#  compare_models(cross_validation=False, include=['catboost', 'lightgbm', 'xgboost', 'rf'])
-#  before = pull().sort_index()
-#  clf0 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True, session_id=1,
-             #  numeric_features=['fin_year'], numeric_imputation='mean',
-             #  high_cardinality_features=['code'], high_cardinality_method='clustering',
-             #  ignore_features=['industry'])
-#  compare_models(cross_validation=False, include=['lr', 'ridge', 'knn', 'svm'])
-#  compare_models(cross_validation=False, include=['catboost', 'lightgbm', 'xgboost', 'rf'])
-#  after = pull().sort_index()
-#  result = pd.concat([before, after]).reset_index()
-#  model_type = pd.DataFrame({'type': ['Origin'] * 4 + ['imputation'] * 4})
-#  result = pd.concat([model_type, result], axis=1)
-#  result.to_csv('doc/output/classification/preprocess.csv')
-
-
-
-# -----------------------------------------------------> train
 clf1 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True, session_id=1,
              numeric_features=['fin_year'], imputation_type='simple',
              high_cardinality_features=['code'], high_cardinality_method='clustering',
              normalize=True, normalize_method='robust',
              transformation=True, transformation_method='yeo-johnson',
              fix_imbalance=True)
-#  best = compare_models(sort='AUC', cross_validation=False)
-#  pull().to_csv('doc/output/classification/comparison.csv')
-#  best = create_model('catboost', cross_validation=False, return_train_score=True)
-#  best = create_model(best, return_train_score=True)
-#  pull().to_csv('doc/output/classification/train_score.csv')
+
+
+# -----------------------------------------------------> train
+best = compare_models(sort='AUC', cross_validation=False)
+pull().to_csv('doc/output/classification/comparison.csv')
+best = create_model('catboost', cross_validation=False, return_train_score=True)
+pull().to_csv('doc/output/classification/train_score.csv')
+catboost = create_model('catboost', cross_validation=False)
+lightgbm = create_model('lightgbm', cross_validation=False)
+xgboost = create_model('xgboost', cross_validation=False)
 
 
 # -----------------------------------------------------> plot
@@ -64,11 +48,7 @@ clf1 = setup(data=train, test_data=test, target='diffRevenue', html=False, silen
 #  for plot_type in ['summary', 'correlation', 'reason', 'pdp', 'msa']: # pfi
     #  interpret_model(best, plot=plot_type, save='doc/figure/classification/')
     #  print('finish ' + plot_type)
-
-
-catboost = create_model('catboost', cross_validation=False)
-lightgbm = create_model('lightgbm', cross_validation=False)
-xgboost = create_model('xgboost', cross_validation=False)
+#  deep_check(best)
 
 
 # -----------------------------------------------------> ensemble
@@ -90,20 +70,21 @@ xgboost = create_model('xgboost', cross_validation=False)
 
 
 # -----------------------------------------------------> blend & stack
-blender = blend_models([catboost, lightgbm, xgboost])
-stacker = stack_models([catboost, lightgbm, xgboost])
-stacker2 = stack_models([catboost, lightgbm, xgboost], restack='False')
-best = compare_models(include=[catboost, lightgbm, xgboost, blender, stacker],
+blender = blend_models([catboost, lightgbm, xgboost], method='soft')
+blender2 = blend_models([catboost, lightgbm, xgboost], method='hard')
+stacker = stack_models([catboost, lightgbm, xgboost], restack=False)
+stacker2 = stack_models([catboost, lightgbm, xgboost], restack=True)
+best = compare_models(include=[catboost, lightgbm, xgboost, blender, blender2, stacker, stacker2],
                       cross_validation=False)
 result = pull()
 result.to_csv('doc/output/classification/result.csv')
 result = pd.read_csv('doc/output/classification/result.csv', index_col=0)
-model_type = pd.DataFrame({'type': ['Origin'] * 3 + ['Blending'] + ['Stacking']})
+model_type = pd.DataFrame({'type': ['Origin'] + [' '] * 2 + ['Blending_soft'] + ['Blending_hard'] + ['Stacking'] + ['Stacking_restack']})
 model_type.join(result.sort_index()).to_csv('doc/output/classification/stack.csv', index=False)
 
 
 # -----------------------------------------------------> tune
-#  best = tune_model(best, early_stopping='asha')
+best = tune_model(best, early_stopping='asha')
 # 参数调整具体参见手册
 
 
@@ -111,20 +92,21 @@ model_type.join(result.sort_index()).to_csv('doc/output/classification/stack.csv
 #  plot_model(best, plot='calibration', save='doc/figure/classification/before')
 #  best = calibrate_model(best)
 #  plot_model(best, plot='calibration', save='doc/figure/classification')
-#  best = finalize_model(best)
 
 
 # -----------------------------------------------------> prediction
-#  pred_unseen = predict_model(best, data=new)
-#  pull().to_csv('doc/output/classification/pred_unseen.csv')
-#  pred_unseen.to_csv('doc/output/classification/prediction.csv')
-#  prediction = pd.read_csv('doc/output/classification/prediction.csv')[['code', 'fin_year', 'Label']]
-#  prediction = pd.merge(dat, prediction, on=['code', 'fin_year'])
-#  total = prediction[['industry', 'diffRevenue']].groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'ALL'})
-#  up = prediction[['industry', 'diffRevenue', 'Label']].query('Label == "up"') \
-    #  .groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'up'})
-#  down = prediction[['industry', 'diffRevenue', 'Label']].query('Label == "down"') \
-    #  .groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': 'down'})
-#  merged = pd.merge(up, total, on='industry', how='left')
-#  merged = pd.merge(merged, down, on='industry', how='left')
-#  merged.to_csv('doc/output/classification/portfolio.csv')
+best = finalize_model(best)
+pred_unseen = predict_model(best, data=new)
+pull().to_csv('doc/output/classification/pred_unseen.csv')
+pred_unseen.to_csv('doc/output/classification/prediction.csv')
+prediction = pd.read_csv('doc/output/classification/prediction.csv')[['code', 'fin_year', 'Label']]
+prediction = pd.merge(dat, prediction, on=['code', 'fin_year'])
+total = prediction[['industry', 'diffRevenue']].groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': '所有上市企业'})
+up = prediction[['industry', 'diffRevenue', 'Label']].query('Label == "up"') \
+    .groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': '预测增长'})
+down = prediction[['industry', 'diffRevenue', 'Label']].query('Label == "down"') \
+    .groupby('industry').agg({'diffRevenue': 'mean'}).rename(columns={'diffRevenue': '预测下降'})
+merged = pd.merge(up, total, on='industry', how='left')
+merged = pd.merge(merged, down, on='industry', how='left')
+merged = merged.rename(columns={'industry': '一级行业'})
+merged.to_csv('doc/output/classification/portfolio.csv')
