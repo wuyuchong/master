@@ -13,7 +13,7 @@ matplotlib.rcParams['font.family'] = ['SimHei']
 # -----------------------------------------------------> init
 dat = pd.read_csv('data/data_for_model.csv', dtype = {'code': str})
 dat.loc[dat['diffRevenue'] > 2, 'diffRevenue'] = 2
-processed = dat.drop(['diffEquity', 'diffAsset', 'diffNI', 'diffPNI'], axis=1)
+processed = dat.drop(['fin_year', 'diffEquity', 'diffAsset', 'diffNI', 'diffPNI'], axis=1)
 processed = processed.loc[~ np.isnan(dat['diffRevenue']), ]
 processed = processed.assign(diffRevenue = ['up' if a > 0 else 'down' for a in processed['diffRevenue']])
 train = processed.query('fin_year < 2019')
@@ -22,8 +22,7 @@ new = processed.query('fin_year == 2020')
 
 
 # -----------------------------------------------------> preprocess
-clf1 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True, session_id=1,
-             numeric_features=['fin_year'], imputation_type='simple',
+clf1 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True, session_id=1, imputation_type='simple',
              high_cardinality_features=['code'], high_cardinality_method='clustering',
              normalize=True, normalize_method='robust',
              transformation=True, transformation_method='yeo-johnson',
@@ -41,32 +40,34 @@ xgboost = create_model('xgboost', cross_validation=False)
 
 
 # -----------------------------------------------------> plot
-#  plot_model(best, plot='auc', use_train_data = True, save='doc/figure/')
-#  for plot_type in ['auc', 'threshold', 'pr', 'confusion_matrix', 'error', 'class_report', 'boundary', 'manifold', 'vc', 'dimension', 'feature', 'parameter', 'lift', 'gain', 'ks']: # rfe learning tree
-    #  plot_model(best, plot=plot_type, scale=5, save='doc/figure/classification/')
-    #  print('finish ' + plot_type)
-#  for plot_type in ['summary', 'correlation', 'reason', 'pdp', 'msa']: # pfi
-    #  interpret_model(best, plot=plot_type, save='doc/figure/classification/')
-    #  print('finish ' + plot_type)
+for plot_type in ['auc', 'threshold', 'pr', 'confusion_matrix', 'error', 'class_report', 'manifold', 'vc', 'dimension', 'feature', 'parameter', 'lift', 'gain', 'ks']: # rfe learning tree
+    plot_model(best, plot=plot_type, scale=5, save='doc/figure/classification/')
+    print('finish ' + plot_type)
+for plot_type in ['summary', 'correlation', 'reason', 'pdp', 'msa']: # pfi
+    interpret_model(best, plot=plot_type, save='doc/figure/classification/')
+    print('finish ' + plot_type)
 #  deep_check(best)
+#  use_train_data
+
+
+# -----------------------------------------------------> plot long time
+#  interpret_model(best, plot='pfi', save='doc/figure/classification/')
 
 
 # -----------------------------------------------------> ensemble
-#  print('------start ensemble---------')
-#  Boosting_catboost = ensemble_model(catboost, method='Boosting')
-#  Boosting_lightgbm = ensemble_model(lightgbm, method='Boosting')
-#  Boosting_xgboost = ensemble_model(xgboost, method='Boosting')
-#  Bagging_catboost = ensemble_model(catboost, method='Bagging')
-#  Bagging_lightgbm = ensemble_model(lightgbm, method='Bagging')
-#  Bagging_xgboost = ensemble_model(xgboost, method='Bagging')
-#  best = compare_models(include=[catboost, lightgbm, xgboost, Boosting_catboost, Boosting_lightgbm, Boosting_xgboost, Bagging_catboost, Bagging_lightgbm, Bagging_xgboost],
-                      #  cross_validation=False)
-#  result = pull()
-#  result.to_csv('doc/output/classification/result.csv')
-#  result = pd.read_csv('doc/output/classification/result.csv', index_col=0)
-#  model_type = pd.DataFrame({'type': ['Origin'] * 3 + ['Boosting'] * 3 + ['Bagging'] * 3})
-#  model_type.join(result.sort_index()).to_csv('doc/output/classification/ensemble.csv', index=False)
-#  best = create_model(best, cross_validation=False, return_train_score=True)
+print('------start ensemble---------')
+Boosting_catboost = ensemble_model(catboost, method='Boosting')
+Boosting_lightgbm = ensemble_model(lightgbm, method='Boosting')
+Boosting_xgboost = ensemble_model(xgboost, method='Boosting')
+Bagging_catboost = ensemble_model(catboost, method='Bagging')
+Bagging_lightgbm = ensemble_model(lightgbm, method='Bagging')
+Bagging_xgboost = ensemble_model(xgboost, method='Bagging')
+compare_models(include=[catboost, lightgbm, xgboost, Boosting_catboost, Boosting_lightgbm, Boosting_xgboost, Bagging_catboost, Bagging_lightgbm, Bagging_xgboost], cross_validation=False)
+result = pull()
+result.to_csv('doc/output/classification/result.csv')
+result = pd.read_csv('doc/output/classification/result.csv', index_col=0)
+model_type = pd.DataFrame({'type': ['Origin'] + [' '] * 2 + ['Boosting'] + [' '] * 2 + ['Bagging'] + [' '] * 2})
+model_type.join(result.sort_index()).to_csv('doc/output/classification/ensemble.csv', index=False)
 
 
 # -----------------------------------------------------> blend & stack
@@ -89,9 +90,9 @@ best = tune_model(best, early_stopping='asha')
 
 
 # -----------------------------------------------------> calibration
-#  plot_model(best, plot='calibration', save='doc/figure/classification/before')
-#  best = calibrate_model(best)
-#  plot_model(best, plot='calibration', save='doc/figure/classification')
+plot_model(best, plot='calibration', save='doc/figure/classification/before')
+best = calibrate_model(best)
+plot_model(best, plot='calibration', save='doc/figure/classification')
 
 
 # -----------------------------------------------------> prediction
@@ -110,3 +111,19 @@ merged = pd.merge(up, total, on='industry', how='left')
 merged = pd.merge(merged, down, on='industry', how='left')
 merged = merged.rename(columns={'industry': '一级行业'})
 merged.to_csv('doc/output/classification/portfolio.csv')
+
+
+# -----------------------------------------------------> plot special
+clf0 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True, session_id=1,
+             imputation_type='simple', fix_imbalance=True,
+             ignore_features=['code', 'industry'])
+lr = create_model('lr', cross_validation=False, return_train_score=True)
+plot_model(lr, plot='boundary', scale=5, save='doc/figure/classification/')
+
+# 变量重要性图 code industry 不要了
+
+
+
+
+
+

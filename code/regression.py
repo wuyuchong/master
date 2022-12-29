@@ -15,7 +15,7 @@ dat = pd.read_csv('data/data_for_model.csv', dtype = {'code': str})
 dat = dat.query('(diffPNI > -2) & (diffPNI < 2)')
 #  dat.loc[dat['diffPNI'] > 2, 'diffPNI'] = 2
 #  dat.loc[dat['diffPNI'] < -2, 'diffPNI'] = -2
-processed = dat.drop(['diffEquity', 'diffAsset', 'diffNI', 'diffRevenue'], axis=1)
+processed = dat.drop(['fin_year', 'diffEquity', 'diffAsset', 'diffNI', 'diffRevenue'], axis=1)
 processed = processed.loc[~ np.isnan(dat['diffPNI']), ]
 train = processed.query('fin_year < 2019')
 test = processed.query('fin_year == 2019')
@@ -23,8 +23,7 @@ new = processed.query('fin_year == 2020')
 
 
 # -----------------------------------------------------> preprocess
-clf1 = setup(data=train, test_data=test, target='diffPNI', html=False, silent=True, session_id=1,
-             numeric_features=['fin_year'], numeric_imputation='mean',
+clf1 = setup(data=train, test_data=test, target='diffRevenue', html=False, silent=True, session_id=1, imputation_type='simple',
              high_cardinality_features=['code'], high_cardinality_method='clustering',
              normalize=True, normalize_method='robust',
              transformation=True, transformation_method='yeo-johnson')
@@ -51,14 +50,32 @@ for plot_type in ['summary', 'correlation', 'reason', 'pdp', 'msa']: # pfi
 
 
 # -----------------------------------------------------> plot long time
-#  plot_model(rf, plot='tree', scale=5, save='doc/figure/regression/')
-#  plot_model(lightgbm, plot='learning', scale=5, save='doc/figure/regression/')
-#  plot_model(lightgbm, plot='rfe', scale=5, save='doc/figure/regression/')
+#  interpret_model(best, plot='pfi', save='doc/figure/regression/')
+#  dt = create_model('dt', cross_validation=False)
+#  plot_model(dt, plot='tree', save='doc/figure/regression/')
+#  plot_model(lightgbm, plot='learning', save='doc/figure/regression/')
+#  plot_model(lightgbm, plot='rfe', save='doc/figure/regression/')
+
+
+# -----------------------------------------------------> ensemble
+print('------start ensemble---------')
+Boosting_catboost = ensemble_model(catboost, method='Boosting')
+Boosting_lightgbm = ensemble_model(lightgbm, method='Boosting')
+Boosting_rf = ensemble_model(rf, method='Boosting')
+Bagging_catboost = ensemble_model(catboost, method='Bagging')
+Bagging_lightgbm = ensemble_model(lightgbm, method='Bagging')
+Bagging_rf = ensemble_model(rf, method='Bagging')
+compare_models(include=[catboost, lightgbm, rf, Boosting_catboost, Boosting_lightgbm, Boosting_rf, Bagging_catboost, Bagging_lightgbm, Bagging_rf], cross_validation=False)
+result = pull()
+result.to_csv('doc/output/regression/result.csv')
+result = pd.read_csv('doc/output/regression/result.csv', index_col=0)
+model_type = pd.DataFrame({'type': ['Origin'] + [' '] * 2 + ['Boosting'] + [' '] * 2 + ['Bagging'] + [' '] * 2})
+model_type.join(result.sort_index()).to_csv('doc/output/regression/ensemble.csv', index=False)
 
 
 # -----------------------------------------------------> blend & stack
-blender = blend_models([catboost, lightgbm, rf], method='soft')
-blender2 = blend_models([catboost, lightgbm, rf], method='hard')
+blender = blend_models([catboost, lightgbm, rf])
+blender2 = blend_models([catboost, lightgbm, rf], weights=[0.7,0.2,0.1])
 stacker = stack_models([catboost, lightgbm, rf], restack=False)
 stacker2 = stack_models([catboost, lightgbm, rf], restack=True)
 best = compare_models(include=[catboost, lightgbm, rf, blender, blender2, stacker, stacker2],
@@ -66,7 +83,7 @@ best = compare_models(include=[catboost, lightgbm, rf, blender, blender2, stacke
 result = pull()
 result.to_csv('doc/output/regression/result.csv')
 result = pd.read_csv('doc/output/regression/result.csv', index_col=0)
-model_type = pd.DataFrame({'type': ['Origin'] + [' '] * 2 + ['Blending_soft'] + ['Blending_hard'] + ['Stacking'] + ['Stacking_restack']})
+model_type = pd.DataFrame({'type': ['Origin'] + [' '] * 2 + ['Blending'] + ['Blending_weighted'] + ['Stacking'] + ['Stacking_restack']})
 model_type.join(result.sort_index()).to_csv('doc/output/regression/stack.csv', index=False)
 
 
@@ -112,4 +129,3 @@ for i in [top5, top10, top20, total, bot20, bot10, bot5, bot2]:
 
 merged = merged.rename(columns={'industry': '一级行业'})
 merged.to_csv('doc/output/regression/portfolio.csv')
-

@@ -333,10 +333,6 @@ knitr::include_graphics("figure/classification/Threshold.png")
 knitr::include_graphics("figure/classification/Precision Recall.png")
 ```
 
-```{r, out.width='25%', fig.align='center', fig.cap = "二分类辨别阈值图"}
-knitr::include_graphics("figure/classification/Threshold.png")
-```
-
 ```{r, out.width='25%', fig.align='center', fig.cap = "混淆矩阵"}
 knitr::include_graphics("figure/classification/Confusion Matrix.png")
 ```
@@ -345,12 +341,9 @@ knitr::include_graphics("figure/classification/Confusion Matrix.png")
 knitr::include_graphics("figure/classification/Class Report.png")
 ```
 
-```{r, out.width='25%', fig.align='center', fig.cap = "决策边界"}
+```{r, out.width='25%', fig.align='center', fig.cap = "svm 模型决策边界"}
 knitr::include_graphics("figure/classification/Decision Boundary.png")
 ```
-
-<应该只有线性模型有用>
-
 
 ```{r, out.width='25%', fig.align='center', fig.cap = "变量重要性"}
 knitr::include_graphics("figure/classification/Feature Importance.png")
@@ -382,8 +375,12 @@ knitr::include_graphics("figure/regression/Residuals.png")
 
 <模型校准的理论待补充>
 
-```{r, out.width='25%', fig.align='center', fig.cap = "校准图"}
+```{r, out.width='25%', fig.align='center', fig.cap = "校准图（校准后）"}
 knitr::include_graphics("figure/classification/Calibration Curve.png")
+```
+
+```{r, out.width='25%', fig.align='center', fig.cap = "校准图（校准前）"}
+knitr::include_graphics("figure/classification/before/Calibration Curve.png")
 ```
 
 为避免 。。。。分别使用 XX 和 XX 对模型输出的概率进行校准，
@@ -401,12 +398,22 @@ knitr::include_graphics("figure/classification/Calibration Curve.png")
 
 Boosting 算法相较 Bagging 算法，每一次抽样的样本分布不同，通过创建一系列区分顺序的预测器，排在前面的预测器拟合数据后，给予错误预测的样本更高权重，由后续的预测器修复误差。通过把一系列弱学习器进行串联，组成一个强学习器。由于经我们的模型比较，效果排名靠前的模型本身便运用了 Boosting 的原理，因此我们不再进行 Boosting 集成学习的搭建。
 
+```{r}
+table = read.csv('output/classification/ensemble.csv')
+kable(table, digits = 3, caption = '对主营业务收入的分类预测单模型集成学习效果比较')
+```
+
+```{r}
+table = read.csv('output/regression/ensemble.csv')
+kable(table, digits = 3, caption = '对归母净利润的定量预测单模型集成学习效果比较')
+```
+
 相较于 Bagging 模型使用多个相同模型拟合不同的采样数据，Blending 使用多个不同的模型拟合相同的全体数据，同样适用投票法得出最终的预测结果。
 
 相比 Blending，Stacking 并不直接用简单的投票法决定最终预测结果，还使用一个额外的模型（在此我们使用 lightGBM）进一步拟合各个模型的预测值。
 
 第一步，有T个不同模型，根据数据，各自独立训练。每个模型输出结果为 $h_t$ ，其中t= 1,2,3...T
-第二步，根据每个模型预测，创建新的『训练集』，训练集的数据（X）是预测结果,Y是实际结果。
+第二步，根据每个模型预测，创建新的训练集，训练集的数据（X）是预测结果,Y是实际结果。
 第三步，再训练一个classifier，这里叫meta-classifier，来从各个预测中再生成最后预测。
 
 [可以画一个小示意图]
@@ -418,16 +425,16 @@ Boosting 算法相较 Bagging 算法，每一次抽样的样本分布不同，�
 
 第一种方法由于不需要交叉验证，耗时相较于第二种方法较短，且由于两层模型使用的数据不同，避免了信息泄漏问题；然而，其划分方式决定了可用数据量较小，容易产生过拟合现象，且没有第二种方法稳健。
 
-```{r}
-table = read.csv('output/classification/ensemble.csv')
-kable(table, digits = 2)
-```
 
 ```{r}
 table = read.csv('output/classification/stack.csv')
-kable(table, digits = 2)
+kable(table, digits = 3, caption = '对主营业务收入的分类预测多模型集成学习效果比较')
 ```
 
+```{r}
+table = read.csv('output/regression/stack.csv')
+kable(table, digits = 3, caption = '对归母净利润的定量预测多模型集成学习效果比较')
+```
 
 # shap
 
@@ -459,6 +466,7 @@ kable(table, digits = 2)
 
 ```{r}
 table = read.csv('output/classification/portfolio.csv')
+names(table)[1] = '一级行业'
 table = mutate_if(table, is.numeric, percent_round)
 kable(table, caption = '各行业预测增长或下降的公司组合与同行业所有公司主营业务收入比较')
 ```
@@ -469,6 +477,7 @@ kable(table, caption = '各行业预测增长或下降的公司组合与同行�
 
 ```{r}
 table = read.csv('output/regression/portfolio.csv')
+names(table)[1] = '一级行业'
 table = mutate_if(table, is.numeric, percent_round)
 kable(table, caption = '各行业预测公司组合与同行业所有公司归母净利润增长率比较')
 ```
