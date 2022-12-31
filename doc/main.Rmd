@@ -19,6 +19,7 @@ library(tidyverse)
 library(scales)
 library(magrittr)
 dat = read.csv('../data/data_for_model.csv', header = TRUE)
+names(dat)
 code_name = read.csv('../data/code_name.csv')
 dictionary = read.csv('dictionary.csv')
 percent_round = function(x){
@@ -35,6 +36,8 @@ industry_table = code_name %>%
 \newpage
 
 # 内容摘要{-}
+
+> word 模版页眉需要更改
 
 \
 
@@ -113,8 +116,7 @@ industry_table = code_name %>%
 
 使用两种主流的股票数据库 akshare ^[https://www.akshare.xyz] 和 baostock ^[http://baostock.com] 获取 A 股所有股票 2007-2022 年的估值指标数据、已发布的财报财务指标数据，经校验比较两者的数据质量后，baostock 数据库质量较 akshare 更好，因此选择 baostock 数据库获取的数据进行分析和建模。 ^[指标计算方式详见附录]
 
-
-数据获取共 XX GB，
+原始数据获取共 1.1 GB，
 
 对于已经退市的股票，我们并没有将他们直接移除，避免发生逆向筛选现象。
 
@@ -238,13 +240,33 @@ kable(table, digits = 2, caption = '异常值处理与标准化在不同模型�
 
 ## 特征变换
 
+<事前正态性检验待补充>
+
 特征变换改变了变量的分布使得变换后数据呈现一个合适的正态分布，可以有效解决模型的异方差性问题。
 
 对于自变量，我们使用 yeo-johnson 和 quantile 方法进行特征变换，对于 quantile 变换方法，由于它并不是线性的，会改变原有变量间的线性相关性。
 
-对于因变量，由于我们进行二分类预测，因此不进行特征变换。
+由于财务指标存在负值，Box-Cox 变换不能符合要求，我们使用幂变换方法 Yeo-Johnson 对自变量进行处理，以减小指标的异方差性，使各项财务指标的概率密度函数的形态逼近正态分布，有利于各项机器学习模型的拟合。
 
-<此处需要补充>
+> 可引用百度参考资料 https://baike.baidu.com/item/Yeo-Johnson%E5%8F%98%E6%8D%A2/23578212?fr=aladdin
+
+当随机变量为正值：
+
+$$ Y=\left\{\begin{array}{ll}
+\log (X+1) & \text { if } \lambda=0, X \geq 0 \\
+\frac{(X+1)^\lambda-1}{\lambda} & \text { if } \lambda \neq 0, X \geq 0
+\end{array}\right. $$
+
+当随机变量为负值：
+
+$$ Y=\left\{\begin{array}{ll}
+-\log (-X+1) & \text { if } \lambda=2, X \leq 0 \\
+\frac{-\left[(-X+1)^{(2-\lambda)}-1\right]}{2-\lambda} & \text { if } \lambda \neq 2, X \leq 0
+\end{array}\right. $$
+
+其中 $\lamba$ 为变换系数，通过机器学习算法进行学习。
+
+对于因变量，由于我们进行二分类预测，因此不进行特征变换。
 
 ```{r}
 table = read.csv('output/classification/preprocess_transformation.csv')
@@ -253,7 +275,13 @@ kable(table, digits = 2, caption = '不同特征变换方式在不同模型下�
 
 ## 数据倾斜修正
 
-对于营业收入，上涨和下跌的样本分别为 XX% ，预测目标变量体现出较强的不平衡性，因此我们使用 SMOTE 过采样技术进行数据倾斜的修正。
+对于主营业务收入，上涨和下跌的样本分别为 XX% ，对于归母净利润，上涨和下跌的样本分别为 XX%。预测目标变量体现出较强的不平衡性，因此我们使用 SMOTE 过采样技术进行数据倾斜的修正。
+
+由于各年份下跌的企业占比较少，部分模型可能无法非常有效地学习到决策边界，我们尝试使用 SMOTE 过采样方法平衡类分布。
+
+SMOTE 方法从少数类中随机选择样本，通过最邻近算法找到特征空间中样本周围的 k 个样本（k通常取5），在每两个样本之间随机选择点创建新样本。
+
+SMOTE 方法虽然解决了样本的不平衡问题，但如果创建的新样本之间有很强的重叠性时，可能会使产生额外的噪音影响模型的效果。
 
 [过采样方法](https://imbalanced-learn.org/stable/index.html)
 
@@ -345,11 +373,19 @@ knitr::include_graphics("figure/classification/Class Report.png")
 knitr::include_graphics("figure/classification/Decision Boundary.png")
 ```
 
-```{r, out.width='25%', fig.align='center', fig.cap = "变量重要性"}
+```{r, out.width='25%', fig.align='center', fig.cap = "主营业务收入二分类预测 Morris 敏感度变量重要性"}
+knitr::include_graphics("figure/classification/MSA msa.png")
+```
+
+```{r, out.width='25%', fig.align='center', fig.cap = "归母净利润定量预测 Morris 敏感度变量重要性"}
+knitr::include_graphics("figure/regression/MSA msa.png")
+```
+
+```{r, out.width='25%', fig.align='center', fig.cap = "主营业务收入二分类预测变量重要性"}
 knitr::include_graphics("figure/classification/Feature Importance.png")
 ```
 
-```{r, out.width='25%', fig.align='center', fig.cap = "变量重要性"}
+```{r, out.width='25%', fig.align='center', fig.cap = "归母净利润定量预测变量重要性"}
 knitr::include_graphics("figure/regression/Feature Importance.png")
 ```
 
@@ -368,7 +404,6 @@ knitr::include_graphics("figure/regression/Prediction Error.png")
 knitr::include_graphics("figure/regression/Residuals.png")
 ```
 
-
 > 残差是目标变量（y）的观测值与预测值（ŷ）之间的差异
 
 ## 模型校准
@@ -385,7 +420,6 @@ knitr::include_graphics("figure/classification/before/Calibration Curve.png")
 
 为避免 。。。。分别使用 XX 和 XX 对模型输出的概率进行校准，
 
-
 ## 集成模型
 
 > Bagging:减少 variance
@@ -394,14 +428,17 @@ knitr::include_graphics("figure/classification/before/Calibration Curve.png")
 
 使用 Bagging（bootstrap aggregation）算法对数据集进行等概率采样后，创建 10 个相同类别的模型（Estimators）进行拟合，在预测时通过 10 个模型结果投票得出最终结果，这种方法可以显著减小模型结果的方差。
 
-使用模型比较排名前三的 CatBoost、Light Gradiant Boosting、Extreme Gradient Boosting 模型分别进行 Bagging 集成算法的搭建，发现三种模型都有一定的提升。
 
-Boosting 算法相较 Bagging 算法，每一次抽样的样本分布不同，通过创建一系列区分顺序的预测器，排在前面的预测器拟合数据后，给予错误预测的样本更高权重，由后续的预测器修复误差。通过把一系列弱学习器进行串联，组成一个强学习器。由于经我们的模型比较，效果排名靠前的模型本身便运用了 Boosting 的原理，因此我们不再进行 Boosting 集成学习的搭建。
+Boosting 算法相较 Bagging 算法，每一次抽样的样本分布不同，通过创建一系列区分顺序的预测器，排在前面的预测器拟合数据后，给予错误预测的样本更高权重，由后续的预测器修复误差。通过把一系列弱学习器进行串联，组成一个强学习器。
 
 ```{r}
 table = read.csv('output/classification/ensemble.csv')
 kable(table, digits = 3, caption = '对主营业务收入的分类预测单模型集成学习效果比较')
 ```
+
+使用模型比较排名前三的 CatBoost、Light Gradiant Boosting、Extreme Gradient Boosting 模型分别进行 Bagging 集成算法的搭建，发现三种模型相比原模型在各个评价指标上均有一定的提升。由于排名前三的模型本身便运用了 Boosting 的原理，因此进一步进行 Boosting 后不会有效果的提升。
+
+在对归母净利润的定量预测中，由于随机森林算法本身并没有使用 Boosting 思想，因此在 Boosting 处理后 $MSE$、$RMSE$ 有所下降，$R^2$ 有所上升。
 
 ```{r}
 table = read.csv('output/regression/ensemble.csv')
@@ -412,11 +449,21 @@ kable(table, digits = 3, caption = '对归母净利润的定量预测单模型�
 
 相比 Blending，Stacking 并不直接用简单的投票法决定最终预测结果，还使用一个额外的模型（在此我们使用 lightGBM）进一步拟合各个模型的预测值。
 
-第一步，有T个不同模型，根据数据，各自独立训练。每个模型输出结果为 $h_t$ ，其中t= 1,2,3...T
+第一步，有T个不同模型，根据财务指标数据，各自独立训练。每个模型输出结果为 $h_t$ ，其中t= 1,2,3...T
 第二步，根据每个模型预测，创建新的训练集，训练集的数据（X）是预测结果,Y是实际结果。
 第三步，再训练一个classifier，这里叫meta-classifier，来从各个预测中再生成最后预测。
 
 [可以画一个小示意图]
+
+
+```{r}
+table = read.csv('output/classification/stack.csv')
+kable(table, digits = 3, caption = '对主营业务收入的分类预测多模型集成学习效果比较')
+```
+
+使用模型比较排名前三的 CatBoost、Light Gradiant Boosting、Extreme Gradient Boosting 模型分别进行 Blending 和 Stacking 集成算法的搭建，发现三种模型相比原模型在各个评价指标上均有一定的提升。
+
+Blending 有两种方式，一种使用预测概率作为投票法的依据，另一种使用预测的二分类结果作为投票法的依据，实践表明，第一种方式的效果在主营业务收入的预测中效果较好。
 
 对于 Stacking 模型，业界常有两种方法：
 
@@ -425,11 +472,7 @@ kable(table, digits = 3, caption = '对归母净利润的定量预测单模型�
 
 第一种方法由于不需要交叉验证，耗时相较于第二种方法较短，且由于两层模型使用的数据不同，避免了信息泄漏问题；然而，其划分方式决定了可用数据量较小，容易产生过拟合现象，且没有第二种方法稳健。
 
-
-```{r}
-table = read.csv('output/classification/stack.csv')
-kable(table, digits = 3, caption = '对主营业务收入的分类预测多模型集成学习效果比较')
-```
+实践表明，在进行主营业务收入和归母净利润的预测中，第一种方法效果远好于第二种，可能是第二种方法信息泄漏问题较严重导致其在测试集上表现不佳。
 
 ```{r}
 table = read.csv('output/regression/stack.csv')
@@ -438,7 +481,7 @@ kable(table, digits = 3, caption = '对归母净利润的定量预测多模型�
 
 # shap
 
-除了 logistic 回归，大多数的机器学习常被认为是“黑盒模型”，然而我们可以使用 shap 值解释模型给出的预测值和企业财务指标的关系。我们将所有的财务指标视为模型的贡献者，通过计算一个财务指标加入到模型时的边际贡献，取该特征在所有的特征序列的情况下不同的边际贡献的均值，即为该特征的 SHAP 值。
+除了 logistic 回归，大多数的机器学习常被认为是“黑盒模型”，然而我们可以使用 shap 值解释模型给出的预测值和企业财务指标的关系。我们将所有的财务指标视为模型的贡献特征，通过计算一个财务指标加入到模型时的边际贡献，取该特征在所有不同特征序列的情况下边际贡献的均值，即为该特征的 SHAP 值。
 
 > Permutation importance很不错，因为它用很简单的数字就可以衡量特征对模型的重要性。但是它不能handle这么一种情况：当一个feature有中等的permutation importance的时候，这可能意味着这么两种情况： - 1：对少量的预测有很大的影响，但是整体来说影响较小； - 2：对所有的预测都有中等程度的影响。
 
@@ -446,8 +489,23 @@ kable(table, digits = 3, caption = '对归母净利润的定量预测多模型�
 
 < moris 变量重要性的理论待补充>
 
+2019年财务指标预测2020年主营业务收入涨跌情况
 
-<变量重要性 MSA html>
+```{r, out.width='25%', fig.align='center', fig.cap = "贵州茅台2020主营业务收入预测解释图"}
+knitr::include_graphics("figure/classification/2019shap600519.png")
+```
+
+```{r, out.width='25%', fig.align='center', fig.cap = "包钢股份2020主营业务收入预测解释图"}
+knitr::include_graphics("figure/classification/2019shap600010.png")
+```
+
+```{r, out.width='25%', fig.align='center', fig.cap = "贵州茅台2020主营业务收入预测解释图"}
+knitr::include_graphics("figure/classification/2019shap600519.png")
+```
+
+```{r, out.width='25%', fig.align='center', fig.cap = "包钢股份2020主营业务收入预测解释图"}
+knitr::include_graphics("figure/classification/2019shap600010.png")
+```
 
 ```{r, out.width='25%', fig.align='center', fig.cap = "递归特征消除效果图"}
 # knitr::include_graphics("figure/classification/rfe.png")
