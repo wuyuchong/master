@@ -84,3 +84,13 @@ deepcheck
 calibration 是不是仅针对 sotonic or logistic regression
 
 learning validation curve 不同模型出不同的图 循环
+
+训练时间是否需要调整
+
+十折交叉验证和测试集的划分如何解释
+
+pfi 变量重要性
+
+指标中缺一项 isST
+
+使用 test data 2020 可以提高准确率

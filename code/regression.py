@@ -23,17 +23,17 @@ new = processed.query('fin_year == 2020')
 
 
 # -----------------------------------------------------> preprocess
-clf1 = setup(data=train, test_data=test, target='diffPNI', html=False, silent=True, session_id=1,
-             imputation_type='simple', ignore_features=['fin_year'],
-             high_cardinality_features=['code'], high_cardinality_method='clustering',
-             normalize=True, normalize_method='robust',
-             transformation=True, transformation_method='yeo-johnson')
+#  clf1 = setup(data=train, test_data=test, target='diffPNI', html=False, silent=True, session_id=1,
+             #  imputation_type='simple', ignore_features=['fin_year'],
+             #  high_cardinality_features=['code'], high_cardinality_method='clustering',
+             #  normalize=True, normalize_method='robust',
+             #  transformation=True, transformation_method='yeo-johnson')
 
 
 # -----------------------------------------------------> train
 #  best = compare_models(cross_validation=False)
 #  pull().to_csv('doc/output/regression/comparison.csv')
-best = create_model('catboost', cross_validation=False, return_train_score=True)
+#  best = create_model('catboost', cross_validation=False, return_train_score=True)
 #  pull().to_csv('doc/output/regression/train_score.csv')
 #  catboost = create_model('catboost', cross_validation=False)
 #  lightgbm = create_model('lightgbm', cross_validation=False)
@@ -101,34 +101,29 @@ best = create_model('catboost', cross_validation=False, return_train_score=True)
 #  total = prediction[['industry', 'diffPNI']].groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': '所有上市企业'})
 #  top2 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = False) \
     #  .groupby('industry').head(2).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': '前2'})
-#
 #  bot2 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = True) \
     #  .groupby('industry').head(2).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': '后2'})
-#
 #  top5 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = False) \
     #  .groupby('industry').head(5).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': '前5'})
-#
 #  bot5 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = True) \
     #  .groupby('industry').head(5).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': '后5'})
-#
 #  top10 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = False) \
     #  .groupby('industry').head(10).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': '前10'})
-#
 #  bot10 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = True) \
     #  .groupby('industry').head(10).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': '后10'})
-#
 #  top20 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = False) \
     #  .groupby('industry').head(20).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': '前20'})
-#
 #  bot20 = prediction[['industry', 'diffPNI', 'Label']].sort_values('Label', ascending = True) \
     #  .groupby('industry').head(20).groupby('industry').agg({'diffPNI': 'mean'}).rename(columns={'diffPNI': '后20'})
-#
 #  merged = top2
-#
 #  for i in [top5, top10, top20, total, bot20, bot10, bot5, bot2]:
     #  merged = pd.merge(merged, i, on='industry', how='left')
-#
 #  merged = merged.rename(columns={'industry': '一级行业'})
 #  merged.to_csv('doc/output/regression/portfolio.csv')
 
-print('finish')
+
+# -----------------------------------------------------> dashboard
+clf1 = setup(data=train, test_data=test, target='diffPNI', html=False, silent=True, session_id=1,
+             ignore_features=['fin_year', 'isST', 'industry', 'code'], numeric_imputation='mean')
+catboost = create_model('catboost', cross_validation=False)
+dashboard(catboost)
