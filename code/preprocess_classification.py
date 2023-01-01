@@ -16,8 +16,8 @@ dat.loc[dat['diffRevenue'] > 2, 'diffRevenue'] = 2
 processed = dat.drop(['diffEquity', 'diffAsset', 'diffNI', 'diffPNI'], axis=1)
 processed = processed.loc[~ np.isnan(dat['diffRevenue']), ]
 processed = processed.assign(diffRevenue = ['up' if a > 0 else 'down' for a in processed['diffRevenue']])
-train = processed.query('fin_year < 2020')
-test = processed.query('fin_year == 2020')
+train = processed.query('fin_year < 2019')
+test = processed.query('fin_year == 2019')
 new = processed.query('fin_year == 2020')
 
 
